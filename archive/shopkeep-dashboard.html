@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shopkeep dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif;background:#eef1f5;color:#1c2733;font-size:14px;line-height:1.45}
+header{background:#123c2e;color:#fff;padding:14px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.shop{font-size:20px;font-weight:700}
+.dim2{opacity:.75;font-size:12px}
+.hright{text-align:right}
+.stockval{font-size:13px;opacity:.9}
+.stockval b{font-size:16px}
+.badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;letter-spacing:.5px;vertical-align:middle}
+.badge.live{background:#1f9d61;color:#fff}
+.badge.snap{background:#c77700;color:#fff}
+.mono{font-family:ui-monospace,Consolas,"Courier New",monospace}
+#banner{display:none;background:#fff3cd;border-bottom:1px solid #e0c068;color:#6b5308;padding:9px 22px;font-size:13px}
+main{max-width:1150px;margin:18px auto;padding:0 14px}
+.card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:16px 18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+h2{font-size:15px;margin-bottom:10px;color:#123c2e}
+h3{font-size:13px;margin:10px 0 6px;color:#3a4a5a}
+input,textarea,button{font:inherit}
+#psearch{width:100%;max-width:420px;padding:7px 10px;border:1px solid #c9d2dc;border-radius:6px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid #e8edf2;text-align:left;vertical-align:top}
+thead th{background:#f6f8fa;color:#44546a;font-size:12px;white-space:nowrap;position:sticky;top:0}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{background:#e8eef4}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+td.mono,code{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:12px}
+tr.low td{background:#fff8e1}
+tr.expired td{background:#fdecec}
+tr.off td{opacity:.55;text-decoration:line-through}
+.empty{text-align:center;color:#8a97a5;padding:14px}
+.tag{display:inline-block;background:#e8eef4;color:#44546a;border-radius:4px;padding:0 6px;font-size:11px;margin-left:4px}
+.flag{display:inline-block;border-radius:4px;padding:0 6px;font-size:11px;font-weight:700}
+.flag.red{background:#c62828;color:#fff}
+.flag.amber{background:#ef8f00;color:#fff}
+.flag.green{background:#1f9d61;color:#fff}
+.flag.blue{background:#e8eef4;color:#33506e}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{background:#f6f8fa;border:1px solid #dde3ea;border-radius:6px;padding:3px 9px;font-size:13px}
+.fchip{background:#f6f8fa;border:1px solid #c9d2dc;border-radius:14px;padding:3px 11px;font-size:12px;cursor:pointer}
+.fchip.on{background:#123c2e;border-color:#123c2e;color:#fff}
+.trays{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.tray{border:1px solid #dde3ea;border-radius:6px;padding:9px 11px;background:#fbfcfd}
+.tname{font-weight:700;font-size:13px;margin-bottom:4px}
+.tray ul{margin-left:16px;font-size:12.5px}
+.dim{color:#7a8794}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#f6f8fa;border:1px solid #e3e9ef;border-radius:6px;padding:9px 12px}
+.stat .k{font-size:11px;color:#5b6b7c;text-transform:uppercase;letter-spacing:.5px}
+.stat .v{font-size:19px;font-weight:700;color:#123c2e;font-variant-numeric:tabular-nums}
+.cols{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+@media (max-width:800px){.cols{grid-template-columns:1fr}}
+#blines{width:100%;padding:8px 10px;border:1px solid #c9d2dc;border-radius:6px;font-family:ui-monospace,Consolas,monospace;margin:6px 0}
+.brow{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:8px}
+.brow label{display:flex;flex-direction:column;font-size:12px;color:#44546a;gap:3px}
+.brow input{padding:6px 9px;border:1px solid #c9d2dc;border-radius:6px;width:190px}
+.brow button{background:#123c2e;color:#fff;border:0;border-radius:6px;padding:9px 20px;font-weight:700;cursor:pointer}
+.brow button:hover{background:#1a5541}
+#bout{background:#0f1720;color:#cde3d8;border-radius:6px;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;min-height:20px}
+footer{max-width:1150px;margin:0 auto 22px;padding:0 14px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div id="shopname" class="shop">…</div>
+    <div id="shopgstin" class="dim2"></div>
+  </div>
+  <div class="hright">
+    <div class="stockval">Total stock value: <b id="stockval"></b></div>
+    <div><span id="modebadge" class="badge snap">…</span> <span id="clock" class="mono"></span></div>
+  </div>
+</header>
+<div id="banner">Read-only snapshot — run python3 shopkeep-web.py for live mode + billing.</div>
+<main>
+<section class="card">
+  <h2>Products</h2>
+  <input id="psearch" placeholder="Search name / barcode / type / HSN…" oninput="renderProducts()">
+  <table>
+    <thead><tr>
+      <th>Barcode</th><th class="sortable" onclick="setSort('name')">Name ⇅</th>
+      <th class="sortable num" onclick="setSort('pricePaise')">Price</th>
+      <th class="sortable num" onclick="setSort('qty')">Qty</th><th>Thr</th>
+      <th class="sortable num" onclick="setSort('valuePaise')">Value</th>
+      <th class="sortable" onclick="setSort('expiry')">Expiry</th><th>HSN</th>
+    </tr></thead>
+    <tbody id="ptbody"></tbody>
+  </table>
+</section>
+<section class="card">
+  <h2>Categories &amp; combo trays</h2>
+  <div id="cats" class="chips"></div>
+  <div id="trays" class="trays"></div>
+</section>
+<section class="card">
+  <h2>Sales — today (IST)</h2>
+  <div class="stats">
+    <div class="stat"><div class="k">Revenue</div><div class="v" id="srev">0</div></div>
+    <div class="stat"><div class="k">Units sold</div><div class="v" id="sunits">0</div></div>
+    <div class="stat"><div class="k">Bills</div><div class="v" id="sbills">0</div></div>
+    <div class="stat"><div class="k">Voided</div><div class="v" id="svoid">0</div></div>
+  </div>
+  <div class="cols">
+    <div><h3>Today's bills</h3>
+      <table><thead><tr><th>Bill</th><th>Time</th><th class="num">Items</th><th class="num">Total</th><th>Phone</th><th>Status</th></tr></thead>
+      <tbody id="stbody"></tbody></table>
+    </div>
+    <div><h3>Top products by revenue</h3>
+      <table><thead><tr><th class="num">#</th><th>Product</th><th>Barcode</th><th class="num">Revenue</th></tr></thead>
+      <tbody id="topbody"></tbody></table>
+    </div>
+  </div>
+</section>
+<section class="card">
+  <h2>Inventory log — newest first</h2>
+  <div id="logchips" class="chips"></div>
+  <table><thead><tr><th>Timestamp (IST)</th><th>Event</th><th>Barcode</th><th>Name</th><th class="num">Qty</th><th class="num">Price</th><th>Detail</th></tr></thead>
+  <tbody id="lbody"></tbody></table>
+</section>
+<section class="card" id="billpanel">
+  <h2>New bill</h2>
+  <p class="dim2">One "barcode qty" line per item (qty optional, default 1). Combo tray (2xxx) barcodes auto-expand. Category trays (3xxx) are NOT sellable — scan individual products.</p>
+  <textarea id="blines" rows="5" placeholder="8901234567890 2&#10;8901234567891"></textarea>
+  <div class="brow">
+    <label>Customer phone<input id="bphone" placeholder="9876543210 (optional)"></label>
+    <label>Discount %<input id="bdisc" type="number" min="0" max="100" value="0"></label>
+    <button onclick="submitBill()">Charge bill</button>
+  </div>
+  <pre id="bout"></pre>
+</section>
+</main>
+<footer class="dim2"><span id="ver"></span> · data: ./shopkeep-data/*.csv · all money integer paise · timestamps IST (Asia/Kolkata)</footer>
+<script>
+"use strict";
+var SNAPSHOT =
+{"meta":{"shopName":"My Kirana Store","gstin":"","version":"1.3.0","generatedIST":"2026-09-27 16:33:56","today":"2026-09-27"},"products":[],"bills":[],"categories":[{"name":"Staples","emoji":"🍚","trayBarcode":"3000000000001"},{"name":"Snacks","emoji":"🍪","trayBarcode":"3000000000002"},{"name":"Beverages","emoji":"🥤","trayBarcode":"3000000000003"},{"name":"Dairy","emoji":"🥛","trayBarcode":"3000000000004"},{"name":"Spices","emoji":"🌶️","trayBarcode":"3000000000005"},{"name":"Personal Care","emoji":"🧼","trayBarcode":"3000000000006"},{"name":"Household","emoji":"🧹","trayBarcode":"3000000000007"},{"name":"Fruits & Veggies","emoji":"🍎","trayBarcode":"3000000000008"},{"name":"Bakery","emoji":"🍞","trayBarcode":"3000000000009"},{"name":"Sweets & Spreads","emoji":"🍫","trayBarcode":"3000000000010"},{"name":"Other","emoji":"📦","trayBarcode":"3000000000011"}],"trays":[],"inventoryLog":[]};
+var DATA=null,LIVE=false,SORT={key:"name",dir:1},LOGFILTER="ALL";
+function $(id){return document.getElementById(id);}
+function esc(s){s=String(s==null?"":s);return s.replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function fmt(p){p=Math.round(Number(p)||0);var sign=p<0?"-":"",a=Math.abs(p);return sign+"\u20B9"+Math.floor(a/100)+"."+String(a%100).padStart(2,"0");}
+function pad(n){return String(n).padStart(2,"0");}
+function istNow(){try{return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"}));}catch(e){return new Date();}}
+function istDateStr(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+function todayIST(){return (!LIVE&&DATA&&DATA.meta&&DATA.meta.today)?DATA.meta.today:istDateStr(istNow());}
+function tick(){var d=istNow();$("clock").textContent=istDateStr(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())+" IST";}
+function detectLive(){
+  var ctrl=("AbortController" in window)?new AbortController():null;
+  var opts=ctrl?{signal:ctrl.signal}:{};
+  var timer=ctrl?setTimeout(function(){ctrl.abort();},2500):null;
+  return fetch("/api/products.json",opts).then(function(r){
+    if(timer)clearTimeout(timer);return !!r.ok;
+  }).catch(function(){if(timer)clearTimeout(timer);return false;});
+}
+function fetchJSON(u){return fetch(u).then(function(r){if(!r.ok)throw new Error(u+" -> HTTP "+r.status);return r.json();});}
+function loadLive(){
+  return Promise.all([fetchJSON("/api/products.json"),fetchJSON("/api/bills.json"),
+    fetchJSON("/api/categories.json"),fetchJSON("/api/trays.json"),
+    fetchJSON("/api/inventorylog.json")]).then(function(p){
+    DATA={products:p[0],bills:p[1],categories:p[2],trays:p[3],inventoryLog:p[4],meta:SNAPSHOT.meta};});
+}
+function boot(){
+  detectLive().then(function(live){
+    if(!live)return null;
+    return loadLive().then(function(){LIVE=true;}).catch(function(){LIVE=false;});
+  }).catch(function(){LIVE=false;}).then(function(){
+    if(!DATA)DATA=SNAPSHOT;
+    if(LIVE){$("modebadge").textContent="LIVE";$("modebadge").className="badge live";}
+    else{$("modebadge").textContent="SNAPSHOT";$("modebadge").className="badge snap";
+         $("banner").style.display="block";$("billpanel").style.display="none";}
+    $("ver").textContent="shopkeep "+(DATA.meta.version||"")+" — "+(LIVE?"live mode":"snapshot generated "+(DATA.meta.generatedIST||"")+" IST");
+    renderAll();setInterval(tick,1000);tick();
+  });
+}
+function refresh(){if(LIVE){loadLive().then(renderAll).catch(function(){});}}
+function renderAll(){renderHeader();renderProducts();renderCats();renderSales();renderLog();}
+function renderHeader(){
+  $("shopname").textContent=DATA.meta.shopName||"My Shop";
+  var g=DATA.meta.gstin||"";
+  $("shopgstin").textContent=g?("GSTIN: "+g):"";
+  var tv=0;DATA.products.forEach(function(p){tv+=(p.valuePaise||0);});
+  $("stockval").textContent=fmt(tv);
+}
+function expState(e,today){
+  if(!e)return "";
+  if(e<today)return "expired";
+  var d=Math.round((new Date(e+"T00:00:00")-new Date(today+"T00:00:00"))/86400000);
+  return (d>=0&&d<=7)?"near":"";
+}
+function setSort(k){if(SORT.key===k)SORT.dir=-SORT.dir;else{SORT.key=k;SORT.dir=1;}renderProducts();}
+function renderProducts(){
+  var q=($("psearch").value||"").toLowerCase(),today=todayIST();
+  var rows=DATA.products.filter(function(p){return !q||(p.name+" "+p.barcode+" "+p.type+" "+p.hsnCode).toLowerCase().indexOf(q)>=0;});
+  var k=SORT.key,dir=SORT.dir;
+  rows.sort(function(a,b){
+    if(k==="name"){var va=(a.name||"").toLowerCase(),vb=(b.name||"").toLowerCase();return va<vb?-dir:va>vb?dir:0;}
+    if(k==="expiry"){var ea=a.expiryDate||"9999-99-99",eb=b.expiryDate||"9999-99-99";return ea<eb?-dir:ea>eb?dir:0;}
+    return ((a[k]||0)-(b[k]||0))*dir;});
+  var h="";
+  rows.forEach(function(p){
+    var ex=expState(p.expiryDate,today),cls=[];
+    if(p.qty<=p.threshold)cls.push("low");
+    if(ex==="expired")cls.push("expired");else if(ex==="near")cls.push("near");
+    h+="<tr class=\""+cls.join(" ")+"\"><td class=\"mono\">"+esc(p.barcode)+"</td><td>"+esc(p.name)+
+       (p.type?" <span class=\"tag\">"+esc(p.type)+"</span>":"")+"</td><td class=\"num\">"+fmt(p.pricePaise)+
+       "</td><td class=\"num\">"+p.qty+"</td><td class=\"num\">"+p.threshold+"</td><td class=\"num\">"+fmt(p.valuePaise)+
+       "</td><td>"+(p.expiryDate?esc(p.expiryDate):"—")+
+       (ex==="expired"?" <span class=\"flag red\">EXPIRED</span>":(ex==="near"?" <span class=\"flag amber\">\u22647d</span>":""))+
+       "</td><td>"+(p.hsnCode?esc(p.hsnCode):"—")+"</td></tr>";});
+  $("ptbody").innerHTML=h||"<tr><td colspan=\"8\" class=\"empty\">no products</td></tr>";
+}
+function renderCats(){
+  var h="";
+  DATA.categories.forEach(function(c){
+    h+="<div class=\"chip\">"+(c.emoji?esc(c.emoji)+" ":"")+esc(c.name)+" <code>"+esc(c.trayBarcode)+"</code></div>";});
+  $("cats").innerHTML=h||"<span class=\"empty\">no categories</span>";
+  var groups={},order=[];
+  DATA.trays.forEach(function(t){
+    if(!groups[t.trayBarcode]){groups[t.trayBarcode]={name:t.name,items:[]};order.push(t.trayBarcode);}
+    groups[t.trayBarcode].items.push(t);});
+  var h2="";
+  order.forEach(function(bc){
+    var g=groups[bc];
+    h2+="<div class=\"tray\"><div class=\"tname\">"+esc(g.name||"Tray")+" <code>"+esc(bc)+"</code></div><ul>";
+    g.items.forEach(function(t){h2+="<li>"+esc(t.itemName)+" × "+t.itemQty+" <span class=\"dim\">"+fmt(t.itemPricePaise)+"</span></li>";});
+    h2+="</ul></div>";});
+  $("trays").innerHTML=h2||"<span class=\"empty\">no combo trays</span>";
+}
+function renderSales(){
+  var today=todayIST();
+  var rows=DATA.bills.filter(function(b){return (b.timestamp||"").slice(0,10)===today;});
+  var sell=rows.filter(function(b){return b.action==="SELL";});
+  var rev=0,units=0;sell.forEach(function(b){rev+=(b.lineTotal||0);units+=(b.qty||0);});
+  var voided={},billSet={},billsMap={};
+  rows.forEach(function(b){
+    billSet[b.billNo]=1;
+    if(b.action==="VOID")voided[b.billNo]=1;
+    var m=billsMap[b.billNo]||(billsMap[b.billNo]={no:b.billNo,ts:b.timestamp,items:0,total:0,void:false,phone:""});
+    if(b.action==="SELL"){m.items+=(b.qty||0);m.total+=(b.lineTotal||0);if(!m.phone)m.phone=b.phone||"";}
+    else m.void=true;});
+  $("srev").textContent=fmt(rev);
+  $("sunits").textContent=String(units);
+  $("sbills").textContent=String(Object.keys(billSet).length);
+  $("svoid").textContent=String(Object.keys(voided).length);
+  var list=Object.keys(billsMap).sort(function(a,b){return a<b?1:(a>b?-1:0);});
+  var h="";
+  list.forEach(function(k){
+    var m=billsMap[k];
+    h+="<tr"+(m.void?" class=\"off\"":"")+"><td class=\"mono\">#"+esc(m.no)+"</td><td>"+esc((m.ts||"").slice(11,16))+
+       "</td><td class=\"num\">"+m.items+"</td><td class=\"num\">"+fmt(m.total)+"</td><td>"+esc(m.phone||"—")+
+       "</td><td>"+(m.void?"<span class=\"flag red\">VOIDED</span>":"<span class=\"flag green\">SAVED</span>")+"</td></tr>";});
+  $("stbody").innerHTML=h||"<tr><td colspan=\"6\" class=\"empty\">no bills today</td></tr>";
+  var by={};
+  sell.forEach(function(b){var k=b.barcode+"|"+b.name;by[k]=(by[k]||0)+(b.lineTotal||0);});
+  var top=Object.keys(by).map(function(k){var i=k.indexOf("|");return{bc:k.slice(0,i),name:k.slice(i+1),rev:by[k]};})
+    .sort(function(a,b){return b.rev-a.rev;}).slice(0,5);
+  var h2="",rank=1;
+  top.forEach(function(t){h2+="<tr><td class=\"num\">"+(rank++)+"</td><td>"+esc(t.name)+"</td><td class=\"mono\">"+esc(t.bc)+"</td><td class=\"num\">"+fmt(t.rev)+"</td></tr>";});
+  $("topbody").innerHTML=h2||"<tr><td colspan=\"4\" class=\"empty\">no sales yet today</td></tr>";
+}
+function setFilter(k){LOGFILTER=k;renderLog();}
+function renderLog(){
+  var evs={};
+  DATA.inventoryLog.forEach(function(r){evs[r.event||"?"]=1;});
+  var keys=Object.keys(evs).sort();
+  var h="<button class=\"fchip"+(LOGFILTER==="ALL"?" on":"")+"\" onclick=\"setFilter('ALL')\">ALL</button>";
+  keys.forEach(function(k){h+="<button class=\"fchip"+(LOGFILTER===k?" on":"")+"\" onclick=\"setFilter('"+k+"')\">"+esc(k)+"</button>";});
+  $("logchips").innerHTML=h;
+  var rows=DATA.inventoryLog.filter(function(r){return LOGFILTER==="ALL"||r.event===LOGFILTER;});
+  var h2="";
+  rows.forEach(function(r){
+    h2+="<tr><td class=\"mono\">"+esc(r.timestamp)+"</td><td><span class=\"flag blue\">"+esc(r.event)+
+       "</span></td><td class=\"mono\">"+esc(r.barcode)+"</td><td>"+esc(r.name)+
+       "</td><td class=\"num\">"+esc(r.qty)+"</td><td class=\"num\">"+esc(r.pricePaise)+
+       "</td><td class=\"dim\">"+esc(r.detail)+"</td></tr>";});
+  $("lbody").innerHTML=h2||"<tr><td colspan=\"7\" class=\"empty\">no log entries</td></tr>";
+}
+function submitBill(){
+  var lines=$("blines").value.split("\n").map(function(s){return s.trim();}).filter(function(s){return s.length;});
+  if(!lines.length){$("bout").textContent="Enter at least one 'barcode qty' line.";return;}
+  var disc=($("bdisc").value||"0").trim();
+  if(!/^\d+$/.test(disc)||Number(disc)>100){$("bout").textContent="Discount must be an integer 0-100.";return;}
+  $("bout").textContent="Processing…";
+  fetch("/api/bill",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({lines:lines,phone:($("bphone").value||"").trim(),discount:disc})})
+  .then(function(r){return r.json();})
+  .then(function(j){
+    var out="exit code: "+j.exitCode+"\n--- stdout ---\n"+(j.stdout||"")+"\n--- stderr ---\n"+(j.stderr||"");
+    $("bout").textContent=out;
+    if(j.ok){$("blines").value="";$("bphone").value="";$("bdisc").value="0";refresh();}
+  })
+  .catch(function(e){$("bout").textContent="request failed: "+e;});
+}
+boot();
+</script>
+</body>
+</html>
