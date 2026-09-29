@@ -1,0 +1,1808 @@
+From 7bd255c49a5419c0e9d236e7838a6a01ea799ecf Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Sun, 27 Sep 2026 14:22:04 +0000
+Subject: [PATCH 4/5] v1.4.0-wip(5C): full button dashboard + API endpoints +
+ start/stop launcher
+
+---
+ README.md       |  24 ++
+ shopkeep-web.py | 525 +++++++++++++++++++++++++---
+ shopkeep.sh     | 886 ++++++++++++++++++++++++++++++++++++++++++++----
+ 3 files changed, 1321 insertions(+), 114 deletions(-)
+
+diff --git a/README.md b/README.md
+index 6be77d6..2a5e822 100755
+--- a/README.md
++++ b/README.md
+@@ -26,6 +26,30 @@ chmod +x shopkeep.sh
+ 
+ ```bash
+ ./shopkeep.sh web          # (re)generates shopkeep-dashboard.html
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
++./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop         # stop the local server (pidfile only)
+ ```
+ 
+ ONE self-contained file — inline CSS/JS, zero external requests (no CDN, no
+diff --git a/shopkeep-web.py b/shopkeep-web.py
+index 6e8583c..49938a6 100755
+--- a/shopkeep-web.py
++++ b/shopkeep-web.py
+@@ -1,37 +1,74 @@
+ #!/usr/bin/env python3
+ """
+-shopkeep-web.py — localhost web UI server for shopkeep.sh.
+-
+-Python 3 STANDARD LIBRARY ONLY (no pip packages). Binds 127.0.0.1:8000 and:
+-  GET  /                          serve the self-contained shopkeep-dashboard.html
+-                                  (regenerated via `./shopkeep.sh web` so the
+-                                  baked-in data is fresh)
+-  GET  /api/products.json         JSON straight from shopkeep-data/products.csv
+-  GET  /api/bills.json            JSON straight from shopkeep-data/bills.csv
+-  GET  /api/categories.json      JSON straight from shopkeep-data/categories.csv
+-  GET  /api/trays.json            JSON straight from shopkeep-data/trays.csv
+-  GET  /api/inventorylog.json    last 100 inventory_log.csv entries, newest first
+-
+-  POST /api/bill                  body: {"lines":["bc qty",...],"phone":"..","discount":"N"}
+-                                  -> runs `./shopkeep.sh bill --phone .. --discount ..`
+-                                  with the scan lines on stdin in EXACTLY the format
+-                                  cmd_bill already parses ("barcode qty" per line;
+-                                  tray barcodes auto-expand). Returns the captured
+-                                  stdout/stderr + exit code. shopkeep.sh stays the
+-                                  ONLY writer to the CSVs — Python never opens a CSV
+-                                  in write mode.
++shopkeep-web.py — localhost web UI server for shopkeep.sh (v1.4.0, Phase 5C).
++
++Python 3 STANDARD LIBRARY ONLY (no pip packages). Binds 127.0.0.1:8000.
++
++THE CONTRACT (inviolable):
++  * shopkeep.sh is the ONLY writer of the CSVs. Python opens the CSVs READ-ONLY.
++    ONE explicit exception: /api/import writes the uploaded csv to a mktemp file
++    OUTSIDE shopkeep-data/ (deleted right after) so `shopkeep.sh import` — which
++    stays the only writer of products/categories/inventory_log — can validate it.
++  * Every mutating endpoint = validate input server-side FIRST (same discipline
++    as /api/bill's discount check) -> shell out to the matching shopkeep.sh
++    subcommand (list args, NO shell, so nothing can inject) -> return
++    {ok, exitCode, stdout, stderr}. The dashboard refreshes ALL panels from
++    /api/*.json after every mutation.
++  * Reports, low-stock/expiry filters, date-range picker and stock value are
++    computed CLIENT-SIDE from /api/*.json — no endpoints for them.
++
++GET  /                             self-contained dashboard (regenerated live)
++GET  /api/products.json            straight from shopkeep-data/products.csv
++GET  /api/bills.json               straight from shopkeep-data/bills.csv
++GET  /api/categories.json          straight from shopkeep-data/categories.csv
++GET  /api/trays.json               straight from shopkeep-data/trays.csv
++GET  /api/inventorylog.json        last 100 inventory_log.csv rows, newest first
++GET  /api/config.json              shopkeep.conf (read-only) + language list
++GET  /api/download/<file>          an Excel-safe CSV from shopkeep-data/exports/
++                                   (filename resolved against the REAL exports
++                                   listing — path traversal is rejected, always)
++GET  /api/upiqr?amount=&note=      UPI payment QR via `shopkeep.sh upi-qr`
++                                   (calls the existing upi_qr path; returns PNG
++                                   base64 when zint exists, else the SVG)
++
++POST /api/bill                     {"lines":[..],"phone":..,"discount":..}
++POST /api/add                      {"name","price","qty"[,"barcode","threshold",
++                                    "desc","type","expiry","hsn"]}
++POST /api/edit                     {"barcode"[,"name","price","threshold","desc",
++                                    "type","expiry","hsn"]}
++POST /api/restock                  {"barcode","qty"[,"reason"]}   qty must be > 0
++POST /api/remove                   {"barcode"[,"reason"]}         (-y is implied)
++POST /api/tray-add                 {"barcode","name","items":"bc:qty,bc:qty"}
++POST /api/tray-remove              {"barcode"}
++POST /api/category-add             {"name"[,"emoji"]}
++POST /api/void                     {"billNo"}
++POST /api/return                   {"billNo"[,"qtys":"bc:qty,...","reason"]}
++POST /api/backup                   {}  (tar.gz via shopkeep.sh backup)
++POST /api/export                   {"scope": all|products|bills|inventory_log|
++                                            trays|categories}
++                                   -> response adds "files":[names just written
++                                   to shopkeep-data/exports/] for download links
++POST /api/config                   {"key","value"}  allowlist-enforced, or
++                                   {"settings":{key:value,...}} for the form
++POST /api/import                   {"csv": "<file text>", "dryRun": true|false}
++                                   -> the REAL `shopkeep.sh import` validator
++                                   report comes back verbatim (single authority)
+ 
+ All responses are UTF-8 with an explicit charset. All money is integer paise.
+-Run:  python3 shopkeep-web.py
++Run:  python3 shopkeep-web.py      (or: ./shopkeep.sh start)
+ """
+ 
++import base64
+ import csv
+ import json
+ import os
++import re
++import shutil
+ import subprocess
+ import sys
++import tempfile
+ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+-from urllib.parse import urlparse
++from urllib.parse import urlparse, parse_qs
+ 
+ # ---------------------------------------------------------------------
+ # Paths — resolve relative to THIS file so it runs from anywhere.
+@@ -44,11 +81,66 @@ BILLS_CSV = os.path.join(DATA_DIR, "bills.csv")
+ INVENTORY_LOG = os.path.join(DATA_DIR, "inventory_log.csv")
+ TRAYS_CSV = os.path.join(DATA_DIR, "trays.csv")
+ CATEGORIES_CSV = os.path.join(DATA_DIR, "categories.csv")
++CONF_FILE = os.path.join(DATA_DIR, "shopkeep.conf")
++EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
+ DASHBOARD_HTML = os.path.join(HERE, "shopkeep-dashboard.html")
+ 
+ HOST = "127.0.0.1"      # localhost ONLY — never 0.0.0.0
+ PORT = 8000
+-SUBPROC_TIMEOUT = 30    # seconds for ./shopkeep.sh subprocesses
++SUBPROC_TIMEOUT = 60    # seconds for ./shopkeep.sh subprocesses
++MAX_CSV_BYTES = 2_000_000   # import guard: 2 MB of csv text is plenty
++
++# Mirror of cmd_config's allowlist in shopkeep.sh (single authority there).
++CONFIG_KEYS = ("shop_name", "gstin", "address", "phone",
++               "default_threshold", "lang", "upi_vpa")
++# Languages offered in the dashboard dropdown (decision #2: en+hi mandatory,
++# ta/te/bn included while free). The script itself accepts all 23.
++LANGS = [("en", "English"), ("hi", "हिन्दी"), ("ta", "தமிழ்"),
++         ("te", "తెలుగు"), ("bn", "বাংলা")]
++
++RE_MONEY = re.compile(r"^\d+(\.\d{1,2})?$")
++RE_INT = re.compile(r"^\d+$")
++RE_BARCODE = re.compile(r"^\d{1,14}$")
++RE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
++RE_QTY_SPEC = re.compile(r"^\d{1,14}:\d+(,\d{1,14}:\d+)*$")
++
++EXPORT_SCOPES = ("all", "products", "bills", "inventory_log", "trays",
++                 "categories")
++
++
++# ---------------------------------------------------------------------
++# Small validation helpers — everything is rejected HERE, before any
++# subprocess runs (same discipline as /api/bill's discount check).
++# ---------------------------------------------------------------------
++def bad(msg):
++    return {"ok": False, "exitCode": 1, "stdout": "", "stderr": msg}
++
++
++def clean_str(v, maxlen=200):
++    """String field for a CSV/conf write: strip control chars that would
++    corrupt line-oriented files. Length-capped."""
++    if v is None:
++        return ""
++    s = str(v).replace("\r", " ").replace("\n", " ").replace("\t", " ")
++    return s.strip()[:maxlen]
++
++
++def run_shop(args, stdin_text=None):
++    """Run ./shopkeep.sh with LIST args (never a shell). Returns the uniform
++    {ok, exitCode, stdout, stderr} result dict."""
++    cmd = [SHOPKEEP] + [str(a) for a in args]
++    try:
++        proc = subprocess.run(cmd, input=stdin_text, capture_output=True,
++                              text=True, timeout=SUBPROC_TIMEOUT, cwd=HERE)
++        return {"ok": proc.returncode == 0, "exitCode": proc.returncode,
++                "stdout": proc.stdout, "stderr": proc.stderr}
++    except subprocess.TimeoutExpired:
++        return {"ok": False, "exitCode": -1, "stdout": "",
++                "stderr": "shopkeep.sh %s timed out" % " ".join(args)}
++    except FileNotFoundError:
++        return {"ok": False, "exitCode": -1, "stdout": "",
++                "stderr": "shopkeep.sh not found at " + SHOPKEEP}
++
+ 
+ # ---------------------------------------------------------------------
+ # CSV -> JSON readers (read-only; Python never writes a CSV).
+@@ -180,6 +272,24 @@ def inventorylog_json(limit=100):
+     return out
+ 
+ 
++def config_json():
++    """shopkeep.conf parsed read-only + the dropdown language list."""
++    settings = {}
++    if os.path.isfile(CONF_FILE):
++        try:
++            with open(CONF_FILE, "r", encoding="utf-8") as f:
++                for line in f:
++                    line = line.strip()
++                    if not line or "=" not in line:
++                        continue
++                    k, _, v = line.partition("=")
++                    if k in CONFIG_KEYS and k not in settings:
++                        settings[k] = v
++        except OSError:
++            pass
++    return {"settings": settings, "langs": [list(x) for x in LANGS]}
++
++
+ # ---------------------------------------------------------------------
+ # Billing: subprocess to shopkeep.sh. Python NEVER writes a CSV.
+ # Sends the scan lines on stdin in exactly the format cmd_bill parses:
+@@ -190,39 +300,299 @@ def commit_bill(payload):
+     """payload: dict with lines (list[str]), phone (str), discount (str)."""
+     lines = payload.get("lines") or []
+     if not isinstance(lines, list) or not lines:
+-        return {"ok": False, "exitCode": 1,
+-                "stdout": "", "stderr": "No lines in request."}
++        return bad("No lines in request.")
+     phone = str(payload.get("phone") or "").strip()
+     discount = str(payload.get("discount") or "0").strip()
+     # validate discount looks like an int 0-100
+     if not discount.isdigit() or not (0 <= int(discount) <= 100):
+-        return {"ok": False, "exitCode": 1,
+-                "stdout": "", "stderr": "discount must be an integer 0-100"}
++        return bad("discount must be an integer 0-100")
+ 
+     stdin_text = "\n".join(str(l) for l in lines) + "\n"
+-    cmd = [SHOPKEEP, "bill", "--phone", phone, "--discount", discount]
++    return run_shop(["bill", "--phone", phone, "--discount", discount],
++                    stdin_text=stdin_text)
++
++
++# ---------------------------------------------------------------------
++# Endpoint handlers — one per mutating button on the dashboard.
++# Each: validate FIRST, then one shopkeep.sh subprocess, then return.
++# ---------------------------------------------------------------------
++def ep_add(p):
++    name = clean_str(p.get("name"), 120)
++    price = str(p.get("price") or "").strip()
++    qty = str(p.get("qty") or "").strip()
++    bc = str(p.get("barcode") or "").strip()
++    thr = str(p.get("threshold") or "").strip()
++    expiry = str(p.get("expiry") or "").strip()
++    desc = clean_str(p.get("desc"), 200)
++    ptype = clean_str(p.get("type"), 60)
++    hsn = clean_str(p.get("hsn"), 20)
++    if not name:
++        return bad("Please enter a product name.")
++    if not RE_MONEY.match(price):
++        return bad("Price must be a number like 25 or 25.50 (no minus sign).")
++    if not RE_INT.match(qty):
++        return bad("Qty must be a whole number (0 or more).")
++    if bc and not RE_BARCODE.match(bc):
++        return bad("Barcode must be digits only (max 14).")
++    if thr and not RE_INT.match(thr):
++        return bad("Threshold must be a whole number.")
++    if expiry and not RE_DATE.match(expiry):
++        return bad("Expiry must be a date like 2025-12-31.")
++    args = ["add", "--name", name, "--price", price, "--qty", qty]
++    if bc:
++        args += ["--barcode", bc]
++    if thr:
++        args += ["--threshold", thr]
++    if desc:
++        args += ["--desc", desc]
++    if ptype:
++        args += ["--type", ptype]
++    if expiry:
++        args += ["--expiry", expiry]
++    if hsn:
++        args += ["--hsn", hsn]
++    return run_shop(args)
++
++
++def ep_edit(p):
++    bc = str(p.get("barcode") or "").strip()
++    if not RE_BARCODE.match(bc):
++        return bad("Barcode must be digits only (max 14).")
++    fields = []
++    for key, label in (("name", 120), ("desc", 200), ("type", 60),
++                       ("hsn", 20)):
++        v = p.get(key)
++        if v is not None and str(v).strip() != "":
++            fields += ["--" + key if key != "desc" else "--desc",
++                       clean_str(v, label)]
++    if p.get("price") not in (None, ""):
++        price = str(p.get("price")).strip()
++        if not RE_MONEY.match(price):
++            return bad("Price must be a number like 25 or 25.50.")
++        fields += ["--price", price]
++    if p.get("threshold") not in (None, ""):
++        thr = str(p.get("threshold")).strip()
++        if not RE_INT.match(thr):
++            return bad("Threshold must be a whole number.")
++        fields += ["--threshold", thr]
++    if p.get("expiry") not in (None, ""):
++        expiry = str(p.get("expiry")).strip()
++        if expiry != "-" and not RE_DATE.match(expiry):
++            return bad("Expiry must be a date like 2025-12-31 (or - to clear).")
++        fields += ["--expiry", expiry]
++    if not fields:
++        return bad("Nothing to change — fill at least one field.")
++    return run_shop(["edit", bc] + fields)
++
++
++def ep_restock(p):
++    bc = str(p.get("barcode") or "").strip()
++    qty = str(p.get("qty") or "").strip()
++    reason = clean_str(p.get("reason"), 200)
++    if not RE_BARCODE.match(bc):
++        return bad("Barcode must be digits only (max 14).")
++    if not RE_INT.match(qty) or int(qty) <= 0:
++        return bad("Qty must be a positive whole number (how many units arrived).")
++    args = ["restock", bc, "--qty", qty]
++    if reason:
++        args += ["--reason", reason]
++    return run_shop(args)
++
++
++def ep_remove(p):
++    bc = str(p.get("barcode") or "").strip()
++    reason = clean_str(p.get("reason"), 200)
++    if not RE_BARCODE.match(bc):
++        return bad("Barcode must be digits only (max 14).")
++    args = ["remove", bc, "-y"]     # confirm already happened in the UI
++    if reason:
++        args += ["--reason", reason]
++    return run_shop(args)
++
++
++def ep_tray_add(p):
++    bc = str(p.get("barcode") or "").strip()
++    name = clean_str(p.get("name"), 80)
++    items = str(p.get("items") or "").strip().replace(" ", "")
++    if not RE_BARCODE.match(bc):
++        return bad("Tray barcode must be digits only (combo trays use 2xxx).")
++    if not name:
++        return bad("Please give the combo tray a name.")
++    if not RE_QTY_SPEC.match(items):
++        return bad("Items must look like 8901234567890:2,8901234567891:1.")
++    return run_shop(["tray", "add", bc, "--name", name, "--items", items])
++
++
++def ep_tray_remove(p):
++    bc = str(p.get("barcode") or "").strip()
++    if not RE_BARCODE.match(bc):
++        return bad("Tray barcode must be digits only.")
++    return run_shop(["tray", "remove", bc])
++
++
++def ep_category_add(p):
++    name = clean_str(p.get("name"), 60)
++    emoji = clean_str(p.get("emoji"), 8)
++    if not name:
++        return bad("Please give the category a name.")
++    args = ["category", "add", name]
++    if emoji:
++        args.append(emoji)
++    return run_shop(args)
++
++
++def ep_void(p):
++    bno = str(p.get("billNo") or "").strip()
++    if not RE_INT.match(bno):
++        return bad("Enter the bill number (a whole number, e.g. 5).")
++    return run_shop(["void", bno])
++
++
++def ep_return(p):
++    bno = str(p.get("billNo") or "").strip()
++    qtys = str(p.get("qtys") or "").strip().replace(" ", "")
++    reason = clean_str(p.get("reason"), 200)
++    if not RE_INT.match(bno):
++        return bad("Enter the bill number (a whole number, e.g. 5).")
++    if qtys and not RE_QTY_SPEC.match(qtys):
++        return bad("Quantities must look like 8901234567890:1,8901234567891:2.")
++    args = ["return", bno]
++    if qtys:
++        args += ["--qty", qtys]
++    if reason:
++        args += ["--reason", reason]
++    return run_shop(args)
++
++
++def ep_backup(p):
++    return run_shop(["backup"])
++
++
++def ep_export(p):
++    scope = str(p.get("scope") or "all").strip()
++    if scope not in EXPORT_SCOPES:
++        return bad("Unknown export target (use: all, products, bills, "
++                   "inventory_log, trays, categories).")
++    result = run_shop(["export", scope])
++    files = []
++    for line in (result.get("stdout") or "").splitlines():
++        # shopkeep.sh prints:  ==> Exported: /path/shopkeep-data/exports/<name>.csv
++        if "Exported:" in line:
++            path = line.split("Exported:", 1)[1].strip()
++            files.append(os.path.basename(path))
++    result["files"] = files
++    return result
++
++
++def ep_config(p):
++    if "settings" in p and isinstance(p["settings"], dict):
++        items = p["settings"].items()
++    else:
++        items = [(p.get("key"), p.get("value"))]
++    results = []
++    ok_all = True
++    for key, value in items:
++        key = str(key or "").strip()
++        value = clean_str(value, 300)
++        if key not in CONFIG_KEYS:
++            results.append({"key": key, "ok": False, "exitCode": 1,
++                            "stdout": "",
++                            "stderr": "Unknown config key: %s (known: %s)"
++                                      % (key, ", ".join(CONFIG_KEYS))})
++            ok_all = False
++            continue
++        if key == "lang":
++            codes = [c for c, _n in LANGS]
++            if value not in codes:
++                results.append({"key": key, "ok": False, "exitCode": 1,
++                                "stdout": "",
++                                "stderr": "Unknown language code: %s (known: %s)"
++                                          % (value, ", ".join(codes))})
++                ok_all = False
++                continue
++        r = run_shop(["config", key, value])
++        r["key"] = key
++        results.append(r)
++        ok_all = ok_all and r["ok"]
++    return {"ok": ok_all, "exitCode": 0 if ok_all else 1,
++            "stdout": "", "stderr": "",
++            "results": results}
++
++
++def ep_import(p):
++    """THE one exception to 'Python never writes a CSV': the uploaded file is
++    written to a mktemp OUTSIDE shopkeep-data/, handed to `shopkeep.sh import`
++    (the single validator authority), and deleted immediately."""
++    text = p.get("csv")
++    dry = bool(p.get("dryRun"))
++    if not isinstance(text, str) or not text.strip():
++        return bad("Choose a CSV file first.")
++    if len(text.encode("utf-8")) > MAX_CSV_BYTES:
++        return bad("File too large (over 2 MB). Split it into smaller files.")
++    tmpdir = tempfile.mkdtemp(prefix="shopkeep-import-")
+     try:
+-        proc = subprocess.run(
+-            cmd,
+-            input=stdin_text,
+-            capture_output=True,
+-            text=True,
+-            timeout=SUBPROC_TIMEOUT,
+-            cwd=HERE,
+-        )
+-        ok = (proc.returncode == 0)
+-        return {
+-            "ok": ok,
+-            "exitCode": proc.returncode,
+-            "stdout": proc.stdout,
+-            "stderr": proc.stderr,
+-        }
+-    except subprocess.TimeoutExpired:
+-        return {"ok": False, "exitCode": -1,
+-                "stdout": "", "stderr": "shopkeep.sh bill timed out"}
+-    except FileNotFoundError:
+-        return {"ok": False, "exitCode": -1,
+-                "stdout": "", "stderr": "shopkeep.sh not found at " + SHOPKEEP}
++        tmp = os.path.join(tmpdir, "upload.csv")
++        with open(tmp, "w", encoding="utf-8", newline="") as f:
++            f.write(text)
++        args = ["import", tmp] + (["--dry-run"] if dry else [])
++        return run_shop(args)
++    finally:
++        shutil.rmtree(tmpdir, ignore_errors=True)
++
++
++POST_ENDPOINTS = {
++    "/api/bill": commit_bill,
++    "/api/add": ep_add,
++    "/api/edit": ep_edit,
++    "/api/restock": ep_restock,
++    "/api/remove": ep_remove,
++    "/api/tray-add": ep_tray_add,
++    "/api/tray-remove": ep_tray_remove,
++    "/api/category-add": ep_category_add,
++    "/api/void": ep_void,
++    "/api/return": ep_return,
++    "/api/backup": ep_backup,
++    "/api/export": ep_export,
++    "/api/config": ep_config,
++    "/api/import": ep_import,
++}
++
++
++# ---------------------------------------------------------------------
++# UPI QR (decision #3) — a tiny GET endpoint that calls the EXISTING
++# upi_qr path (`shopkeep.sh upi-qr`) and returns the rendered code.
++# PNG (zint) comes back base64; the pure-Python-free SVG fallback comes
++# back as markup. The QR file is written to a mktemp OUTSIDE
++# shopkeep-data/ by shopkeep.sh itself and deleted right after.
++# ---------------------------------------------------------------------
++def upiqr_json(query):
++    amount = (query.get("amount") or [""])[0].strip()
++    note = (query.get("note") or [""])[0]
++    note = "".join(ch for ch in note if ch >= " " or ch == " ")[:40].strip()
++    if not RE_MONEY.match(amount) or amount == "0" or amount.startswith("0.00"):
++        return {"ok": False, "error": "amount must be a number like 250 or 250.50"}
++    tmpdir = tempfile.mkdtemp(prefix="shopkeep-upi-")
++    try:
++        out = os.path.join(tmpdir, "qr.png")
++        r = run_shop(["upi-qr", amount, note, out])
++        if not r["ok"]:
++            return {"ok": False, "error": (r.get("stderr") or r.get("stdout") or
++                    "UPI QR failed").strip()}
++        produced = None
++        for name in sorted(os.listdir(tmpdir)):
++            if name.startswith("qr."):
++                produced = os.path.join(tmpdir, name)
++                break
++        if not produced:
++            return {"ok": False, "error": "QR file was not produced"}
++        with open(produced, "rb") as f:
++            data = f.read()
++        if data[:4] == b"\x89PNG":
++            return {"ok": True, "kind": "png",
++                    "data": base64.b64encode(data).decode("ascii")}
++        return {"ok": True, "kind": "svg", "data": data.decode("utf-8", "replace")}
++    finally:
++        shutil.rmtree(tmpdir, ignore_errors=True)
+ 
+ 
+ def regenerate_dashboard():
+@@ -249,19 +619,22 @@ def regenerate_dashboard():
+ # HTTP handler
+ # ---------------------------------------------------------------------
+ class Handler(BaseHTTPRequestHandler):
+-    server_version = "shopkeep-web/1.0"
++    server_version = "shopkeep-web/1.4"
+ 
+     def log_message(self, fmt, *args):
+         # keep the console quiet-ish but visible
+         sys.stderr.write("  %s - %s\n" % (self.address_string(), fmt % args))
+ 
+-    def _send(self, status, body_bytes, content_type, charset="utf-8"):
++    def _send(self, status, body_bytes, content_type, charset="utf-8",
++              disposition=None):
+         if isinstance(body_bytes, str):
+             body_bytes = body_bytes.encode(charset)
+         self.send_response(status)
+         # explicit charset on every response
+         self.send_header("Content-Type", content_type + "; charset=" + charset)
+         self.send_header("Content-Length", str(len(body_bytes)))
++        if disposition:
++            self.send_header("Content-Disposition", disposition)
+         # file:// dashboards are self-contained; this is just localhost
+         self.send_header("Cache-Control", "no-store")
+         self.end_headers()
+@@ -272,7 +645,8 @@ class Handler(BaseHTTPRequestHandler):
+                    "application/json")
+ 
+     def do_GET(self):
+-        path = urlparse(self.path).path
++        parsed = urlparse(self.path)
++        path = parsed.path
+         if path == "/" or path == "/index.html":
+             html = regenerate_dashboard()
+             self._send(200, html, "text/html")
+@@ -287,24 +661,63 @@ class Handler(BaseHTTPRequestHandler):
+             self._send_json(trays_json()); return
+         if path == "/api/inventorylog.json":
+             self._send_json(inventorylog_json(100)); return
++        if path == "/api/config.json":
++            self._send_json(config_json()); return
++        if path == "/api/upiqr":
++            self._send_json(upiqr_json(parse_qs(parsed.query))); return
++        if path.startswith("/api/download/"):
++            self.serve_download(path[len("/api/download/"):]); return
+         # static fallback: nothing else is served (zero external requests by design)
+         self._send(404, '{"error":"not found","path":' +
+-                   json.dumps(path) + '}', "application/json", )
++                   json.dumps(path) + '}', "application/json")
++
++    def serve_download(self, name):
++        """SECURITY PIN: the filename is resolved against the REAL exports/
++        directory listing. Anything containing '/', '..' or not present in
++        that exact directory is rejected. No path traversal, ever."""
++        if not name or "/" in name or "\\" in name or ".." in name \
++                or name.startswith("."):
++            self._send_json({"ok": False, "error": "bad filename"}, 400)
++            return
++        real_exports = os.path.realpath(EXPORTS_DIR)
++        target = os.path.realpath(os.path.join(real_exports, name))
++        if os.path.dirname(target) != real_exports:
++            self._send_json({"ok": False, "error": "bad filename"}, 400)
++            return
++        if not os.path.isdir(real_exports) or \
++                os.path.basename(target) not in os.listdir(real_exports) or \
++                not os.path.isfile(target):
++            self._send_json({"ok": False, "error": "no such export"}, 404)
++            return
++        try:
++            with open(target, "rb") as f:
++                data = f.read()
++        except OSError:
++            self._send_json({"ok": False, "error": "cannot read file"}, 500)
++            return
++        self._send(200, data, "text/csv",
++                   disposition="attachment; filename=\"%s\"" % name)
+ 
+     def do_POST(self):
+         path = urlparse(self.path).path
+-        if path != "/api/bill":
++        handler = POST_ENDPOINTS.get(path)
++        if handler is None:
+             self._send_json({"ok": False, "error": "unknown POST endpoint"}, 404)
+             return
+         length = int(self.headers.get("Content-Length") or 0)
++        if length > MAX_CSV_BYTES + 65536:
++            self._send_json(bad("Request too large."), 400)
++            return
+         raw = self.rfile.read(length) if length else b""
+         try:
+             payload = json.loads(raw.decode("utf-8") or "{}")
++            if not isinstance(payload, dict):
++                raise ValueError("body must be a JSON object")
+         except Exception as e:
+             self._send_json({"ok": False, "error": "bad JSON: " + str(e)}, 400)
+             return
+-        result = commit_bill(payload)
+-        self._send_json(result, 200 if result.get("ok") else 500)
++        result = handler(payload)
++        self._send_json(result, 200)
+ 
+ 
+ def main():
+diff --git a/shopkeep.sh b/shopkeep.sh
+index 30c2095..e950680 100755
+--- a/shopkeep.sh
++++ b/shopkeep.sh
+@@ -69,6 +69,11 @@
+ #                                      # zero external requests). Double-click it
+ #                                      # for a read-only snapshot, or serve it
+ #                                      # live with billing: python3 shopkeep-web.py
++#   ./shopkeep.sh start                # one command: regenerate the dashboard,
++#                                      # launch the local server (127.0.0.1:8000)
++#                                      # in the background + open the browser;
++#                                      # re-running is safe ("already running")
++#   ./shopkeep.sh stop                 # stop the local server (pidfile ONLY)
+ #   ./shopkeep.sh --doctor | --selftest | --gen-files | -h | -V
+ #
+ # DATA FILES (CSVs under ./shopkeep-data/; backups/ + labels/ sit beside it; a
+@@ -268,6 +273,7 @@ LANG_NAMES=(
+ 
+ # English defaults — always loaded; every key has an English value.
+ load_strings_en() {
++    T[en.edit_tray_warn]="Warning: combo tray(s) still include this product at the OLD price — recreate the tray if you changed it"
+     T[en.m_new_bill]="New bill"
+     T[en.m_add_product]="Add product"
+     T[en.m_low_stock]="Low stock report"
+@@ -430,6 +436,7 @@ load_strings_en() {
+ # Per-language overrides. Only translate the visible UI strings.
+ # Missing keys fall back to English automatically via t().
+ load_strings_hi() {
++    T[hi.edit_tray_warn]="चेतावनी: कॉम्बो ट्रे में यह उत्पाद अब भी पुरानी कीमत पर है — बदलाव किया है तो ट्रे फिर बनाएँ"
+     T[hi.m_new_bill]="नया बिल"; T[hi.m_add_product]="उत्पाद जोड़ें"
+     T[hi.m_low_stock]="कम स्टॉक रिपोर्ट"; T[hi.m_summary]="दैनिक बिक्री सारांश"
+     T[hi.m_void]="बिल रद्द करें"; T[hi.m_backup]="अभी बैकअप लें"
+@@ -835,6 +842,16 @@ t() {
+ # Load strings for the active language (English always, then the selected one).
+ i18n_init() {
+     load_strings_en
++    # (v1.4.0 5C bugfix) honour the SAVED language: set_lang() wrote lang=<code>
++    # into shopkeep.conf, but nothing ever read it back at startup — every run
++    # (menus, receipts, `web` snapshot) booted in English. Unknown codes fall
++    # back to English gracefully.
++    local saved
++    saved=$(conf lang "en" 2>/dev/null || true)
++    if [[ "$saved" != "en" && -n "$saved" ]] && \
++       declare -F "load_strings_${saved}" >/dev/null 2>&1; then
++        LANG_CODE="$saved"
++    fi
+     local fn="load_strings_${LANG_CODE}"
+     if declare -F "$fn" >/dev/null 2>&1; then "$fn"; fi
+ }
+@@ -2152,6 +2169,16 @@ cmd_edit() {
+     _DROP=()
+     if rewrite_products_from_memory; then
+         log_event "EDIT" "$bc" "${P_NAME[$bc]}" "${P_QTY[$bc]}" "${P_PRICE[$bc]}" "edited: ${changes}"
++        # (v1.4.0 5C) combo trays snapshot item price/qty — warn when this
++        # product is still listed in one, so stale tray rows are not a surprise.
++        load_trays
++        local tbc traywarn=""
++        for tbc in "${!TRAY_ITEMS[@]}"; do
++            if [[ " ${TRAY_ITEMS[$tbc]} " == *" $bc:"* ]]; then
++                traywarn+="${TRAY_NAME[$tbc]:-$tbc} ($tbc), "
++            fi
++        done
++        [[ -n "$traywarn" ]] && err "$(t edit_tray_warn): ${traywarn%, }"
+         unlock
+         log "Edited $bc: $changes"
+         return 0
+@@ -3098,6 +3125,7 @@ cmd_selftest() {
+     st_test "report equals per-day summaries" _st_report_matches_summary
+     st_test "scan graceful degradation" _st_scan_degrade
+     st_test "UPI URI format" _st_upi_uri
++    st_test "start/stop pidfile lifecycle" _st_start_stop
+ 
+     echo
+     local failcolor="$C_GREEN"
+@@ -3783,6 +3811,33 @@ _st_upi_uri() {
+ #─────────────────────────────────────────────────────────────────────────────
+ # Date helpers (IST-aware). days_until returns int (negative if past).
+ #─────────────────────────────────────────────────────────────────────────────
++_st_start_stop() {
++    local pf="$DATA_DIR/server.pid"
++    rm -f "$pf" "$pf.lock"
++    # 1) stop without a pidfile is a friendly no-op
++    cmd_stop >/dev/null 2>&1 || return 1
++    # 2) fake a live server with a short-lived child process
++    local child
++    sleep 30 & child=$!
++    printf '%s\n' "$child" > "$pf"
++    # 3) start must report "Already running" and NOT launch anything
++    local out
++    out=$(cmd_start 2>&1) || { kill "$child" 2>/dev/null || true; return 1; }
++    if [[ "$out" != *"Already running"* ]]; then kill "$child" 2>/dev/null || true; return 1; fi
++    if [[ ! -f "$pf" ]]; then kill "$child" 2>/dev/null || true; return 1; fi
++    # 4) stop kills EXACTLY the pidfile pid and removes the pidfile
++    cmd_stop >/dev/null 2>&1 || { kill "$child" 2>/dev/null || true; return 1; }
++    if [[ -f "$pf" ]]; then return 1; fi
++    local i
++    for ((i=0; i<20; i++)); do
++        kill -0 "$child" 2>/dev/null || break
++        sleep 0.1
++    done
++    if kill -0 "$child" 2>/dev/null; then return 1; fi
++    wait "$child" 2>/dev/null || true
++    return 0
++}
++
+ ist_today() { TZ=Asia/Kolkata date '+%Y-%m-%d'; }
+ 
+ days_until() {
+@@ -4505,12 +4560,18 @@ header{background:#123c2e;color:#fff;padding:14px 22px;display:flex;justify-cont
+ .badge.snap{background:#c77700;color:#fff}
+ .mono{font-family:ui-monospace,Consolas,"Courier New",monospace}
+ #banner{display:none;background:#fff3cd;border-bottom:1px solid #e0c068;color:#6b5308;padding:9px 22px;font-size:13px}
++#okbar{display:none;background:#1f9d61;color:#fff;padding:12px 22px;font-size:16px;font-weight:700;cursor:pointer}
++#errbar{display:none;background:#c62828;color:#fff;padding:12px 22px;font-size:14px;font-weight:600;white-space:pre-wrap;word-break:break-word;cursor:pointer}
++nav.tabs{background:#0e2d23;padding:8px 14px;display:flex;gap:8px;flex-wrap:wrap}
++.tabbtn{background:#123c2e;color:#fff;border:0;border-radius:8px;padding:12px 20px;font-size:15px;font-weight:700;cursor:pointer}
++.tabbtn.on{background:#f6f8fa;color:#123c2e}
+ main{max-width:1150px;margin:18px auto;padding:0 14px}
+ .card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:16px 18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+ h2{font-size:15px;margin-bottom:10px;color:#123c2e}
+ h3{font-size:13px;margin:10px 0 6px;color:#3a4a5a}
+-input,textarea,button{font:inherit}
+-#psearch{width:100%;max-width:420px;padding:7px 10px;border:1px solid #c9d2dc;border-radius:6px;margin-bottom:10px}
++input,textarea,select,button{font:inherit}
++input,select,textarea{padding:8px 10px;border:1px solid #c9d2dc;border-radius:6px;background:#fff}
++#psearch{width:100%;max-width:420px;margin-bottom:10px}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ th,td{padding:6px 8px;border-bottom:1px solid #e8edf2;text-align:left;vertical-align:top}
+ thead th{background:#f6f8fa;color:#44546a;font-size:12px;white-space:nowrap;position:sticky;top:0}
+@@ -4530,7 +4591,7 @@ tr.off td{opacity:.55;text-decoration:line-through}
+ .flag.blue{background:#e8eef4;color:#33506e}
+ .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+ .chip{background:#f6f8fa;border:1px solid #dde3ea;border-radius:6px;padding:3px 9px;font-size:13px}
+-.fchip{background:#f6f8fa;border:1px solid #c9d2dc;border-radius:14px;padding:3px 11px;font-size:12px;cursor:pointer}
++.fchip{background:#f6f8fa;border:1px solid #c9d2dc;border-radius:14px;padding:4px 12px;font-size:13px;cursor:pointer}
+ .fchip.on{background:#123c2e;border-color:#123c2e;color:#fff}
+ .trays{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+ .tray{border:1px solid #dde3ea;border-radius:6px;padding:9px 11px;background:#fbfcfd}
+@@ -4543,13 +4604,30 @@ tr.off td{opacity:.55;text-decoration:line-through}
+ .stat .v{font-size:19px;font-weight:700;color:#123c2e;font-variant-numeric:tabular-nums}
+ .cols{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+ @media (max-width:800px){.cols{grid-template-columns:1fr}}
+-#blines{width:100%;padding:8px 10px;border:1px solid #c9d2dc;border-radius:6px;font-family:ui-monospace,Consolas,monospace;margin:6px 0}
++#blines{width:100%;padding:10px;border:1px solid #c9d2dc;border-radius:6px;font-family:ui-monospace,Consolas,monospace;margin:6px 0;font-size:15px}
+ .brow{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:8px}
+-.brow label{display:flex;flex-direction:column;font-size:12px;color:#44546a;gap:3px}
+-.brow input{padding:6px 9px;border:1px solid #c9d2dc;border-radius:6px;width:190px}
+-.brow button{background:#123c2e;color:#fff;border:0;border-radius:6px;padding:9px 20px;font-weight:700;cursor:pointer}
+-.brow button:hover{background:#1a5541}
+-#bout{background:#0f1720;color:#cde3d8;border-radius:6px;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;min-height:20px}
++.brow label,.fgrid label{display:flex;flex-direction:column;font-size:12px;color:#44546a;gap:3px}
++.brow input{width:190px}
++.big{background:#1f9d61;color:#fff;border:0;border-radius:8px;padding:14px 26px;font-size:16px;font-weight:800;cursor:pointer}
++.big:hover{background:#22885a}
++.big:disabled{background:#9bb8ab;cursor:wait}
++.btn{border:0;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;background:#123c2e;color:#fff}
++.btn:hover{background:#1a5541}
++.btn:disabled{opacity:.5;cursor:wait}
++.btn.ghost{background:#fff;color:#123c2e;border:1px solid #c9d2dc}
++.btn.amber{background:#ef8f00}
++.btn.danger{background:#c62828}
++.rowbtns button{border:1px solid #c9d2dc;background:#fff;border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;margin:1px 2px}
++.rowbtns button:hover{background:#eef4f0}
++.rowbtns button.danger{color:#c62828;border-color:#e5b4b4}
++.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:8px 0 12px}
++.fgrid input,.fgrid select{width:100%}
++.err2{color:#c62828;font-weight:700}
++#bout,#imp_report{background:#0f1720;color:#cde3d8;border-radius:6px;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;min-height:20px;margin-top:8px}
++#scanarea video{max-width:320px;border-radius:8px;border:1px solid #c9d2dc;display:block;margin:6px 0}
++#upiarea{margin-top:10px;padding:10px;border:1px dashed #1f9d61;border-radius:8px;display:inline-block;background:#f4fbf7;text-align:center}
++#upiarea img,#upiarea svg{width:170px;height:170px;display:block;margin:0 auto}
++#dllinks a{display:inline-block;background:#e8f3ee;border:1px solid #bcd9cb;color:#123c2e;border-radius:6px;padding:6px 10px;margin:4px 6px 0 0;font-size:12.5px;text-decoration:none}
+ footer{max-width:1150px;margin:0 auto 22px;padding:0 14px;font-size:12px}
+ </style>
+ </head>
+@@ -4564,11 +4642,76 @@ footer{max-width:1150px;margin:0 auto 22px;padding:0 14px;font-size:12px}
+     <div><span id="modebadge" class="badge snap">…</span> <span id="clock" class="mono"></span></div>
+   </div>
+ </header>
+-<div id="banner">Read-only snapshot — run python3 shopkeep-web.py for live mode + billing.</div>
++<div id="banner">Read-only snapshot — run ./shopkeep.sh start for live mode + all buttons.</div>
++<div id="okbar" onclick="this.style.display='none'"></div>
++<div id="errbar" onclick="this.style.display='none'"></div>
++<nav class="tabs" id="tabnav">
++  <button type="button" class="tabbtn on" data-tab="tab-bill" onclick="showTab('tab-bill')">Billing</button>
++  <button type="button" class="tabbtn" data-tab="tab-products" onclick="showTab('tab-products')">Products</button>
++  <button type="button" class="tabbtn" data-tab="tab-reports" onclick="showTab('tab-reports')">Reports</button>
++  <button type="button" class="tabbtn" data-tab="tab-data" onclick="showTab('tab-data')">Data &amp; backup</button>
++  <button type="button" class="tabbtn" data-tab="tab-settings" onclick="showTab('tab-settings')">Settings</button>
++</nav>
+ <main>
+-<section class="card">
++
++<!-- ═══════════ BILLING ═══════════ -->
++<section class="tabpage" id="tab-bill">
++<div class="card mutate" id="billpanel">
++  <h2 id="h_bill" data-ui="newBill">New bill</h2>
++  <p class="dim2">One "barcode qty" line per item (qty optional, default 1). Combo tray (2xxx) barcodes auto-expand. Category trays (3xxx) are NOT sellable — scan individual products.</p>
++  <textarea id="blines" rows="5" placeholder="8901234567890 2&#10;8901234567891"></textarea>
++  <div class="brow">
++    <label>Customer phone<input id="bphone" placeholder="9876543210 (optional)"></label>
++    <label>Discount %<input id="bdisc" type="number" min="0" max="100" value="0"></label>
++    <button type="button" class="btn ghost" onclick="scanCam()">📷 Scan with camera</button>
++    <button type="button" class="btn ghost">🖼️ Scan photo<input type="file" accept="image/*" style="display:none" onchange="scanPhoto(this)"></button>
++    <button type="button" class="btn ghost" id="scanstop" style="display:none" onclick="scanStop()">Stop camera</button>
++  </div>
++  <div id="scanhint" class="dim2"></div>
++  <div id="scanarea"></div>
++  <button type="button" class="big" onclick="submitBill(this)">Charge bill</button>
++  <div id="upiarea" style="display:none"></div>
++  <pre id="bout"></pre>
++</div>
++<div class="card mutate">
++  <h2 id="h_void" data-ui="voidBill">Cancel or return a bill</h2>
++  <div class="cols">
++    <div>
++      <h3>Cancel (void) a whole bill</h3>
++      <p class="dim2">The bill is marked cancelled and every item goes back into stock.</p>
++      <div class="brow">
++        <label>Bill number<input id="vno" placeholder="e.g. 5" style="width:120px"></label>
++        <button type="button" class="btn danger" onclick="doVoid(this)">Cancel bill</button>
++      </div>
++    </div>
++    <div>
++      <h3>Return some items</h3>
++      <p class="dim2">Leave quantities blank to return everything still unreturned.</p>
++      <div class="brow">
++        <label>Bill number<input id="rno" placeholder="e.g. 5" style="width:110px"></label>
++        <label>Items (barcode:qty, …)<input id="rqty" placeholder="optional" style="width:220px"></label>
++        <label>Reason<input id="rreason" placeholder="optional" style="width:150px"></label>
++        <button type="button" class="btn amber" onclick="doReturn(this)">Return items</button>
++      </div>
++    </div>
++  </div>
++</div>
++</section>
++
++<!-- ═══════════ PRODUCTS ═══════════ -->
++<section class="tabpage" id="tab-products" style="display:none">
++<div class="card">
+   <h2>Products</h2>
+-  <input id="psearch" placeholder="Search name / barcode / type / HSN…" oninput="renderProducts()">
++  <div class="brow">
++    <input id="psearch" placeholder="Search name / barcode / type / HSN…" oninput="renderProducts()">
++    <button type="button" class="big mutate" onclick="openAddForm()">＋ Add product</button>
++  </div>
++  <div class="chips">
++    <button type="button" class="fchip on" id="pf-all" onclick="setPF('all')">All</button>
++    <button type="button" class="fchip" id="pf-low" onclick="setPF('low')">Low stock</button>
++    <button type="button" class="fchip" id="pf-expired" onclick="setPF('expired')">Expired</button>
++    <button type="button" class="fchip" id="pf-near" onclick="setPF('near')">Expiring ≤ 7 days</button>
++  </div>
+   <table>
+     <thead><tr>
+       <th>Barcode</th><th class="sortable" onclick="setSort('name')">Name ⇅</th>
+@@ -4579,13 +4722,54 @@ footer{max-width:1150px;margin:0 auto 22px;padding:0 14px;font-size:12px}
+     </tr></thead>
+     <tbody id="ptbody"></tbody>
+   </table>
+-</section>
+-<section class="card">
+-  <h2>Categories &amp; combo trays</h2>
++</div>
++<div class="card mutate" id="pform" style="display:none">
++  <h2 id="h_add" data-ui="addProduct">Add product</h2>
++  <div class="fgrid">
++    <label><span id="l_bc" data-ui="barcode">Barcode</span><input id="f_bc" placeholder="leave blank = automatic"></label>
++    <label><span id="l_name" data-ui="name">Name</span><input id="f_name" placeholder="Tata Salt 1kg"></label>
++    <label><span id="l_price" data-ui="price">Price (₹)</span><input id="f_price" placeholder="25.00"></label>
++    <label id="f_qtyrow"><span id="l_qty" data-ui="qty">Qty in stock</span><input id="f_qty" placeholder="24"></label>
++    <label><span id="l_thr" data-ui="threshold">Low-stock alert at</span><input id="f_thr" placeholder="8"></label>
++    <label><span>Type / category</span><input id="f_type" placeholder="Grocery"></label>
++    <label><span>Expiry (YYYY-MM-DD)</span><input id="f_expiry" placeholder="2026-12-31"></label>
++    <label><span>HSN code</span><input id="f_hsn" placeholder="2501"></label>
++    <label style="grid-column:1/-1"><span>Description / brand</span><input id="f_desc" placeholder="optional"></label>
++  </div>
++  <div class="brow">
++    <button type="button" class="big" id="btnPsave" onclick="saveProduct(this)">Save product</button>
++    <button type="button" class="btn ghost" onclick="closePform()">Cancel</button>
++  </div>
++</div>
++<div class="card">
++  <h2>Combo trays &amp; categories</h2>
+   <div id="cats" class="chips"></div>
+   <div id="trays" class="trays"></div>
++  <div class="cols mutate">
++    <div>
++      <h3>New combo tray (2xxx barcode)</h3>
++      <div class="fgrid">
++        <label>Tray barcode<input id="t_bc" placeholder="2001"></label>
++        <label>Tray name<input id="t_name" placeholder="Breakfast combo"></label>
++        <label style="grid-column:1/-1">Items (barcode:qty, …)<input id="t_items" placeholder="8901234567890:2,8901234567891:1"></label>
++      </div>
++      <button type="button" class="btn" onclick="doTrayAdd(this)">Create tray</button>
++    </div>
++    <div>
++      <h3>New category</h3>
++      <div class="fgrid">
++        <label>Category name<input id="c_name" placeholder="Dairy"></label>
++        <label>Emoji<input id="c_emoji" placeholder="🥛"></label>
++      </div>
++      <button type="button" class="btn" onclick="doCatAdd(this)">Add category</button>
++    </div>
++  </div>
++</div>
+ </section>
+-<section class="card">
++
++<!-- ═══════════ REPORTS ═══════════ -->
++<section class="tabpage" id="tab-reports" style="display:none">
++<div class="card">
+   <h2>Sales — today (IST)</h2>
+   <div class="stats">
+     <div class="stat"><div class="k">Revenue</div><div class="v" id="srev">0</div></div>
+@@ -4603,23 +4787,93 @@ footer{max-width:1150px;margin:0 auto 22px;padding:0 14px;font-size:12px}
+       <tbody id="topbody"></tbody></table>
+     </div>
+   </div>
+-</section>
+-<section class="card">
++</div>
++<div class="card">
++  <h2>Sales report — pick your dates</h2>
++  <div class="brow">
++    <label>From<input type="date" id="rep_from"></label>
++    <label>To<input type="date" id="rep_to"></label>
++    <button type="button" class="btn" onclick="renderReport()">Show report</button>
++  </div>
++  <div id="repstats" class="stats"></div>
++  <div class="cols">
++    <div><h3>Day by day</h3>
++      <table><thead><tr><th>Date</th><th class="num">Bills</th><th class="num">Units</th><th class="num">Sold</th><th class="num">Refunded</th><th class="num">Net</th></tr></thead>
++      <tbody id="repdays"></tbody></table>
++    </div>
++    <div><h3>Top products in this range</h3>
++      <table><thead><tr><th class="num">#</th><th>Product</th><th>Barcode</th><th class="num">Revenue</th></tr></thead>
++      <tbody id="reptop"></tbody></table>
++    </div>
++  </div>
++</div>
++<div class="card">
+   <h2>Inventory log — newest first</h2>
+   <div id="logchips" class="chips"></div>
+   <table><thead><tr><th>Timestamp (IST)</th><th>Event</th><th>Barcode</th><th>Name</th><th class="num">Qty</th><th class="num">Price</th><th>Detail</th></tr></thead>
+   <tbody id="lbody"></tbody></table>
++</div>
+ </section>
+-<section class="card" id="billpanel">
+-  <h2>New bill</h2>
+-  <p class="dim2">One "barcode qty" line per item (qty optional, default 1). Combo tray (2xxx) barcodes auto-expand. Category trays (3xxx) are NOT sellable — scan individual products.</p>
+-  <textarea id="blines" rows="5" placeholder="8901234567890 2&#10;8901234567891"></textarea>
++
++<!-- ═══════════ DATA & BACKUP ═══════════ -->
++<section class="tabpage mutate" id="tab-data" style="display:none">
++<div class="card">
++  <h2 id="h_backup" data-ui="backup">Backup</h2>
++  <p class="dim2">Saves a full copy of every file into the backups folder. Keep last 14.</p>
++  <button type="button" class="big" onclick="doBackup(this)">Backup now</button>
++  <pre id="dataout"></pre>
++</div>
++<div class="card">
++  <h2>Export for Excel</h2>
++  <p class="dim2">Excel-safe copies land in shopkeep-data/exports/ — click a file below to download it.</p>
+   <div class="brow">
+-    <label>Customer phone<input id="bphone" placeholder="9876543210 (optional)"></label>
+-    <label>Discount %<input id="bdisc" type="number" min="0" max="100" value="0"></label>
+-    <button onclick="submitBill()">Charge bill</button>
++    <label>What to export
++      <select id="ex_scope">
++        <option value="all">Everything</option>
++        <option value="products">Products</option>
++        <option value="bills">Bills</option>
++        <option value="inventory_log">Inventory log</option>
++        <option value="trays">Trays</option>
++        <option value="categories">Categories</option>
++      </select>
++    </label>
++    <button type="button" class="btn" onclick="doExport(this)">Export CSV</button>
+   </div>
+-  <pre id="bout"></pre>
++  <div id="dllinks"></div>
++</div>
++<div class="card">
++  <h2>Import products from a CSV file</h2>
++  <p class="dim2">Three steps: 1) choose the file 2) <b>Check file</b> shows any problems 3) <b>Import for real</b>. Nothing is saved unless the check passes — one bad row stops everything.</p>
++  <div class="brow">
++    <label>CSV file<input type="file" id="imp_file" accept=".csv,text/csv" onchange="impFileChange(this)"></label>
++    <button type="button" class="btn" id="btnImpCheck" onclick="doImpCheck(this)" disabled>1) Check file</button>
++    <button type="button" class="big" id="btnImpReal" onclick="doImpReal(this)" disabled>2) Import for real</button>
++  </div>
++  <pre id="imp_report">The shopkeeper program checks your file here.</pre>
++</div>
++</section>
++
++<!-- ═══════════ SETTINGS ═══════════ -->
++<section class="tabpage" id="tab-settings" style="display:none">
++<div class="card">
++  <h2>Shop settings</h2>
++  <div class="fgrid">
++    <label><span>Shop name</span><input id="s_shop_name"></label>
++    <label><span>GSTIN</span><input id="s_gstin" placeholder="33ABCDE1234F1Z5"></label>
++    <label><span>Shop phone</span><input id="s_phone"></label>
++    <label><span>Address (receipt)</span><input id="s_address"></label>
++    <label><span>Default low-stock alert</span><input id="s_threshold" placeholder="8"></label>
++    <label><span>UPI ID (for payment QR)</span><input id="s_upi_vpa" placeholder="name@upi"></label>
++  </div>
++  <div class="mutate"><button type="button" class="big" onclick="saveSettings(this)">Save settings</button></div>
++</div>
++<div class="card mutate">
++  <h2 id="h_lang" data-ui="lang">Language</h2>
++  <div class="brow">
++    <label>Language<select id="s_lang" onchange="langChange(this)"></select></label>
++    <span class="dim2">The page reloads in your language.</span>
++  </div>
++</div>
+ </section>
+ </main>
+ <footer class="dim2"><span id="ver"></span> · data: ./shopkeep-data/*.csv · all money integer paise · timestamps IST (Asia/Kolkata)</footer>
+@@ -4629,6 +4883,12 @@ var SNAPSHOT =
+ SKD_PART1
+     printf '{' >> "$tmp"
+     printf '"meta":' >> "$tmp";          _web_json_meta      >> "$tmp"
++    printf ',"ui":{"newBill":"%s","addProduct":"%s","voidBill":"%s","backup":"%s","name":"%s","price":"%s","qty":"%s","barcode":"%s","threshold":"%s","lang":"%s"}' >> "$tmp" \
++        "$(json_escape "$(t m_new_bill)")" "$(json_escape "$(t m_add_product)")" \
++        "$(json_escape "$(t m_void)")" "$(json_escape "$(t m_backup)")" \
++        "$(json_escape "$(t p_name)")" "$(json_escape "$(t p_price)")" \
++        "$(json_escape "$(t p_qty)")" "$(json_escape "$(t p_barcode)")" \
++        "$(json_escape "$(t p_threshold)")" "$(json_escape "$(t m_language)")"
+     printf ',"products":' >> "$tmp";     _web_json_products  >> "$tmp"
+     printf ',"bills":' >> "$tmp";        _web_json_bills     >> "$tmp"
+     printf ',"categories":' >> "$tmp";   _web_json_categories >> "$tmp"
+@@ -4637,15 +4897,29 @@ SKD_PART1
+     printf '}' >> "$tmp"
+     cat >> "$tmp" <<'SKD_PART2'
+ ;
+-var DATA=null,LIVE=false,SORT={key:"name",dir:1},LOGFILTER="ALL";
++var DATA=null,LIVE=false,SORT={key:"name",dir:1},LOGFILTER="ALL",PFILTER="all";
++var EDITBC=null,IMPCSV=null,IMPOK=false,CONFIG=null;
++var OKTIMER=null;
+ function $(id){return document.getElementById(id);}
+ function esc(s){s=String(s==null?"":s);return s.replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+ function fmt(p){p=Math.round(Number(p)||0);var sign=p<0?"-":"",a=Math.abs(p);return sign+"\u20B9"+Math.floor(a/100)+"."+String(a%100).padStart(2,"0");}
++function toRs(p){p=Math.round(Number(p)||0);return Math.floor(p/100)+"."+String(p%100).padStart(2,"0");}
+ function pad(n){return String(n).padStart(2,"0");}
+ function istNow(){try{return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"}));}catch(e){return new Date();}}
+ function istDateStr(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+ function todayIST(){return (!LIVE&&DATA&&DATA.meta&&DATA.meta.today)?DATA.meta.today:istDateStr(istNow());}
+ function tick(){var d=istNow();$("clock").textContent=istDateStr(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())+" IST";}
++function showOk(msg){var b=$("okbar");b.textContent="\u2713 "+msg;b.style.display="block";if(OKTIMER)clearTimeout(OKTIMER);OKTIMER=setTimeout(function(){b.style.display="none";},7000);}
++function showErr(msg){var b=$("errbar");b.textContent=String(msg||"Something went wrong.");b.style.display="block";$("okbar").style.display="none";}
++function setBusy(btn,on){if(!btn)return;if(on){btn.dataset.lbl=btn.textContent;btn.disabled=true;btn.textContent="Working…";}else{btn.disabled=false;if(btn.dataset.lbl)btn.textContent=btn.dataset.lbl;}}
++function apiPost(path,body,btn,cb){
++  setBusy(btn,true);
++  return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
++    .then(function(r){return r.json();})
++    .then(function(j){setBusy(btn,false);if(cb)cb(j);return j;})
++    .catch(function(e){setBusy(btn,false);showErr("Could not reach the shop server ("+path+"). Is it still running?");});
++}
++function showOut(j){var out="exit code: "+j.exitCode+"\n--- stdout ---\n"+(j.stdout||"")+"\n--- stderr ---\n"+(j.stderr||"");$("bout").textContent=out;}
+ function detectLive(){
+   var ctrl=("AbortController" in window)?new AbortController():null;
+   var opts=ctrl?{signal:ctrl.signal}:{};
+@@ -4661,24 +4935,51 @@ function loadLive(){
+     fetchJSON("/api/inventorylog.json")]).then(function(p){
+     DATA={products:p[0],bills:p[1],categories:p[2],trays:p[3],inventoryLog:p[4],meta:SNAPSHOT.meta};});
+ }
++function loadConfig(){
++  return fetchJSON("/api/config.json").then(function(c){CONFIG=c;}).catch(function(){CONFIG=null;});
++}
++function hideMutating(){
++  document.querySelectorAll(".mutate").forEach(function(el){el.remove();});
++  var nav=document.querySelector(".tabbtn[data-tab=\"tab-data\"]");if(nav)nav.remove();
++  var sec=$("tab-data");if(sec)sec.remove();
++}
++function applyUi(){
++  var UI=(SNAPSHOT&&SNAPSHOT.ui)||{};
++  document.querySelectorAll("[data-ui]").forEach(function(el){
++    var k=el.getAttribute("data-ui");
++    if(UI[k])el.textContent=UI[k];
++  });
++}
++function showTab(id){
++  document.querySelectorAll(".tabpage").forEach(function(s){s.style.display=(s.id===id)?"":"none";});
++  document.querySelectorAll(".tabbtn").forEach(function(b){b.className="tabbtn"+(b.dataset.tab===id?" on":"");});
++  if(id==="tab-reports"&&DATA)renderReport();
++}
+ function boot(){
+   detectLive().then(function(live){
+     if(!live)return null;
+-    return loadLive().then(function(){LIVE=true;}).catch(function(){LIVE=false;});
++    return loadLive().then(loadConfig).then(function(){LIVE=true;}).catch(function(){LIVE=false;});
+   }).catch(function(){LIVE=false;}).then(function(){
+     if(!DATA)DATA=SNAPSHOT;
+     if(LIVE){$("modebadge").textContent="LIVE";$("modebadge").className="badge live";}
+     else{$("modebadge").textContent="SNAPSHOT";$("modebadge").className="badge snap";
+-         $("banner").style.display="block";$("billpanel").style.display="none";}
++         $("banner").style.display="block";hideMutating();}
+     $("ver").textContent="shopkeep "+(DATA.meta.version||"")+" — "+(LIVE?"live mode":"snapshot generated "+(DATA.meta.generatedIST||"")+" IST");
+-    renderAll();setInterval(tick,1000);tick();
++    var t=todayIST();$("rep_from").value=t;$("rep_to").value=t;
++    renderAll();applyUi();
++    if(LIVE)renderSettings();
++    setInterval(tick,1000);tick();
+   });
+ }
+-function refresh(){if(LIVE){loadLive().then(renderAll).catch(function(){});}}
++function refresh(cb){
++  if(!LIVE){if(cb)cb();return;}
++  loadLive().then(function(){renderAll();if(cb)cb();}).catch(function(){});
++}
+ function renderAll(){renderHeader();renderProducts();renderCats();renderSales();renderLog();}
+ function renderHeader(){
+-  $("shopname").textContent=DATA.meta.shopName||"My Shop";
+-  var g=DATA.meta.gstin||"";
++  var cfg=(LIVE&&CONFIG&&CONFIG.settings)||{};
++  $("shopname").textContent=cfg.shop_name||DATA.meta.shopName||"My Shop";
++  var g=cfg.gstin!==undefined&&cfg.gstin!==""?cfg.gstin:(DATA.meta.gstin||"");
+   $("shopgstin").textContent=g?("GSTIN: "+g):"";
+   var tv=0;DATA.products.forEach(function(p){tv+=(p.valuePaise||0);});
+   $("stockval").textContent=fmt(tv);
+@@ -4690,9 +4991,16 @@ function expState(e,today){
+   return (d>=0&&d<=7)?"near":"";
+ }
+ function setSort(k){if(SORT.key===k)SORT.dir=-SORT.dir;else{SORT.key=k;SORT.dir=1;}renderProducts();}
++function setPF(k){PFILTER=k;["all","low","expired","near"].forEach(function(x){var el=$("pf-"+x);if(el)el.className="fchip"+(x===k?" on":"");});renderProducts();}
+ function renderProducts(){
+   var q=($("psearch").value||"").toLowerCase(),today=todayIST();
+   var rows=DATA.products.filter(function(p){return !q||(p.name+" "+p.barcode+" "+p.type+" "+p.hsnCode).toLowerCase().indexOf(q)>=0;});
++  rows=rows.filter(function(p){
++    var ex=expState(p.expiryDate,today);
++    if(PFILTER==="low")return p.qty<=p.threshold;
++    if(PFILTER==="expired")return ex==="expired";
++    if(PFILTER==="near")return ex==="near";
++    return true;});
+   var k=SORT.key,dir=SORT.dir;
+   rows.sort(function(a,b){
+     if(k==="name"){var va=(a.name||"").toLowerCase(),vb=(b.name||"").toLowerCase();return va<vb?-dir:va>vb?dir:0;}
+@@ -4708,8 +5016,14 @@ function renderProducts(){
+        "</td><td class=\"num\">"+p.qty+"</td><td class=\"num\">"+p.threshold+"</td><td class=\"num\">"+fmt(p.valuePaise)+
+        "</td><td>"+(p.expiryDate?esc(p.expiryDate):"—")+
+        (ex==="expired"?" <span class=\"flag red\">EXPIRED</span>":(ex==="near"?" <span class=\"flag amber\">\u22647d</span>":""))+
+-       "</td><td>"+(p.hsnCode?esc(p.hsnCode):"—")+"</td></tr>";});
+-  $("ptbody").innerHTML=h||"<tr><td colspan=\"8\" class=\"empty\">no products</td></tr>";
++       "</td><td>"+(p.hsnCode?esc(p.hsnCode):"—")+"</td>";
++    if(LIVE)h+="<td class=\"rowbtns\">"+
++      "<button type=\"button\" onclick=\"doRestock('"+esc(p.barcode)+"',this)\">+ Stock</button>"+
++      "<button type=\"button\" onclick=\"openEditForm('"+esc(p.barcode)+"')\">Edit</button>"+
++      "<button type=\"button\" class=\"danger\" onclick=\"doRemove('"+esc(p.barcode)+"',this)\">Remove</button></td>";
++    h+="</tr>";});
++  var span=LIVE?9:8;
++  $("ptbody").innerHTML=h||"<tr><td colspan=\""+span+"\" class=\"empty\">no products</td></tr>";
+ }
+ function renderCats(){
+   var h="";
+@@ -4723,7 +5037,9 @@ function renderCats(){
+   var h2="";
+   order.forEach(function(bc){
+     var g=groups[bc];
+-    h2+="<div class=\"tray\"><div class=\"tname\">"+esc(g.name||"Tray")+" <code>"+esc(bc)+"</code></div><ul>";
++    h2+="<div class=\"tray\"><div class=\"tname\">"+esc(g.name||"Tray")+" <code>"+esc(bc)+"</code>";
++    if(LIVE)h2+=" <button type=\"button\" class=\"rowbtns\" style=\"float:right\" onclick=\"doTrayRemove('"+esc(bc)+"','"+esc(g.name||"")+"',this)\">✕</button>";
++    h2+="</div><ul>";
+     g.items.forEach(function(t){h2+="<li>"+esc(t.itemName)+" × "+t.itemQty+" <span class=\"dim\">"+fmt(t.itemPricePaise)+"</span></li>";});
+     h2+="</ul></div>";});
+   $("trays").innerHTML=h2||"<span class=\"empty\">no combo trays</span>";
+@@ -4740,10 +5056,10 @@ function renderSales(){
+     var m=billsMap[b.billNo]||(billsMap[b.billNo]={no:b.billNo,ts:b.timestamp,items:0,total:0,void:false,phone:""});
+     if(b.action==="SELL"){m.items+=(b.qty||0);m.total+=(b.lineTotal||0);if(!m.phone)m.phone=b.phone||"";}
+     else m.void=true;});
+-  $("srev").textContent=fmt(rev);
+-  $("sunits").textContent=String(units);
+-  $("sbills").textContent=String(Object.keys(billSet).length);
+-  $("svoid").textContent=String(Object.keys(voided).length);
++  var st=$("srev");
++  if(st){st.textContent=fmt(rev);$("sunits").textContent=String(units);
++    $("sbills").textContent=String(Object.keys(billSet).length);
++    $("svoid").textContent=String(Object.keys(voided).length);}
+   var list=Object.keys(billsMap).sort(function(a,b){return a<b?1:(a>b?-1:0);});
+   var h="";
+   list.forEach(function(k){
+@@ -4751,14 +5067,64 @@ function renderSales(){
+     h+="<tr"+(m.void?" class=\"off\"":"")+"><td class=\"mono\">#"+esc(m.no)+"</td><td>"+esc((m.ts||"").slice(11,16))+
+        "</td><td class=\"num\">"+m.items+"</td><td class=\"num\">"+fmt(m.total)+"</td><td>"+esc(m.phone||"—")+
+        "</td><td>"+(m.void?"<span class=\"flag red\">VOIDED</span>":"<span class=\"flag green\">SAVED</span>")+"</td></tr>";});
+-  $("stbody").innerHTML=h||"<tr><td colspan=\"6\" class=\"empty\">no bills today</td></tr>";
++  var tb=$("stbody");
++  if(tb)tb.innerHTML=h||"<tr><td colspan=\"6\" class=\"empty\">no bills today</td></tr>";
+   var by={};
+   sell.forEach(function(b){var k=b.barcode+"|"+b.name;by[k]=(by[k]||0)+(b.lineTotal||0);});
+   var top=Object.keys(by).map(function(k){var i=k.indexOf("|");return{bc:k.slice(0,i),name:k.slice(i+1),rev:by[k]};})
+     .sort(function(a,b){return b.rev-a.rev;}).slice(0,5);
+   var h2="",rank=1;
+   top.forEach(function(t){h2+="<tr><td class=\"num\">"+(rank++)+"</td><td>"+esc(t.name)+"</td><td class=\"mono\">"+esc(t.bc)+"</td><td class=\"num\">"+fmt(t.rev)+"</td></tr>";});
+-  $("topbody").innerHTML=h2||"<tr><td colspan=\"4\" class=\"empty\">no sales yet today</td></tr>";
++  var tp=$("topbody");
++  if(tp)tp.innerHTML=h2||"<tr><td colspan=\"4\" class=\"empty\">no sales yet today</td></tr>";
++}
++function renderReport(){
++  var from=$("rep_from").value,to=$("rep_to").value;
++  var stats=$("repstats"),days=$("repdays"),top=$("reptop");
++  if(!stats)return;
++  if(!from||!to){stats.innerHTML="<span class=\"dim2\">Pick a start and end date, then click Show report.</span>";days.innerHTML="";top.innerHTML="";return;}
++  if(from>to){stats.innerHTML="<span class=\"err2\">The end date is before the start date — please fix the dates.</span>";days.innerHTML="";top.innerHTML="";return;}
++  var byDay={},order=[],topBy={},billsSeen=0;
++  var seen={};
++  DATA.bills.forEach(function(b){
++    var d=(b.timestamp||"").slice(0,10);
++    if(d<from||d>to)return;
++    if(!byDay[d]){byDay[d]={sell:0,refund:0,units:0,bills:{},voided:{}};order.push(d);}
++    if(b.action==="SELL"){
++      byDay[d].sell+=(b.lineTotal||0);byDay[d].units+=(b.qty||0);byDay[d].bills[b.billNo]=1;
++      var k=b.barcode+"|"+b.name;topBy[k]=(topBy[k]||0)+(b.lineTotal||0);
++    }else if(b.action==="VOID"){
++      byDay[d].refund+=(b.lineTotal||0);byDay[d].voided[b.billNo]=1;
++    }
++  });
++  order.sort();
++  var tSell=0,tRef=0,tUnits=0,billDays={},voidDays=0;
++  order.forEach(function(d){
++    var o=byDay[d];tSell+=o.sell;tRef+=o.refund;tUnits+=o.units;
++    Object.keys(o.bills).forEach(function(x){billDays[d+"#"+x]=1;});
++    voidDays+=Object.keys(o.voided).length;
++  });
++  var nbills=Object.keys(billDays).length;
++  stats.innerHTML=
++    "<div class=\"stat\"><div class=\"k\">Money taken</div><div class=\"v\">"+fmt(tSell)+"</div></div>"+
++    "<div class=\"stat\"><div class=\"k\">Refunded</div><div class=\"v\">"+fmt(tRef)+"</div></div>"+
++    "<div class=\"stat\"><div class=\"k\">Net</div><div class=\"v\">"+fmt(tSell-tRef)+"</div></div>"+
++    "<div class=\"stat\"><div class=\"k\">Units sold</div><div class=\"v\">"+tUnits+"</div></div>"+
++    "<div class=\"stat\"><div class=\"k\">Bills</div><div class=\"v\">"+nbills+"</div></div>"+
++    "<div class=\"stat\"><div class=\"k\">Voided</div><div class=\"v\">"+voidDays+"</div></div>";
++  var h="";
++  order.forEach(function(d){
++    var o=byDay[d];
++    h+="<tr><td class=\"mono\">"+esc(d)+"</td><td class=\"num\">"+Object.keys(o.bills).length+
++       "</td><td class=\"num\">"+o.units+"</td><td class=\"num\">"+fmt(o.sell)+
++       "</td><td class=\"num\">"+(o.refund?"-"+fmt(o.refund):fmt(0))+
++       "</td><td class=\"num\">"+fmt(o.sell-o.refund)+"</td></tr>";});
++  days.innerHTML=h||"<tr><td colspan=\"6\" class=\"empty\">no sales in this range</td></tr>";
++  var topList=Object.keys(topBy).map(function(k){var i=k.indexOf("|");return{bc:k.slice(0,i),name:k.slice(i+1),rev:topBy[k]};})
++    .sort(function(a,b){return b.rev-a.rev;}).slice(0,5);
++  var h2="",rank=1;
++  topList.forEach(function(t){h2+="<tr><td class=\"num\">"+(rank++)+"</td><td>"+esc(t.name)+"</td><td class=\"mono\">"+esc(t.bc)+"</td><td class=\"num\">"+fmt(t.rev)+"</td></tr>";});
++  top.innerHTML=h2||"<tr><td colspan=\"4\" class=\"empty\">nothing sold in this range</td></tr>";
+ }
+ function setFilter(k){LOGFILTER=k;renderLog();}
+ function renderLog(){
+@@ -4777,22 +5143,332 @@ function renderLog(){
+        "</td><td class=\"dim\">"+esc(r.detail)+"</td></tr>";});
+   $("lbody").innerHTML=h2||"<tr><td colspan=\"7\" class=\"empty\">no log entries</td></tr>";
+ }
+-function submitBill(){
++/* ── billing ─────────────────────────────────────────────────────── */
++function submitBill(btn){
+   var lines=$("blines").value.split("\n").map(function(s){return s.trim();}).filter(function(s){return s.length;});
+-  if(!lines.length){$("bout").textContent="Enter at least one 'barcode qty' line.";return;}
++  if(!lines.length){showErr("Type or scan at least one 'barcode qty' line first.");return;}
+   var disc=($("bdisc").value||"0").trim();
+-  if(!/^\d+$/.test(disc)||Number(disc)>100){$("bout").textContent="Discount must be an integer 0-100.";return;}
+-  $("bout").textContent="Processing…";
+-  fetch("/api/bill",{method:"POST",headers:{"Content-Type":"application/json"},
+-    body:JSON.stringify({lines:lines,phone:($("bphone").value||"").trim(),discount:disc})})
+-  .then(function(r){return r.json();})
+-  .then(function(j){
+-    var out="exit code: "+j.exitCode+"\n--- stdout ---\n"+(j.stdout||"")+"\n--- stderr ---\n"+(j.stderr||"");
+-    $("bout").textContent=out;
+-    if(j.ok){$("blines").value="";$("bphone").value="";$("bdisc").value="0";refresh();}
+-  })
+-  .catch(function(e){$("bout").textContent="request failed: "+e;});
++  if(!/^\d+$/.test(disc)||Number(disc)>100){showErr("Discount must be a whole number from 0 to 100.");return;}
++  apiPost("/api/bill",{lines:lines,phone:($("bphone").value||"").trim(),discount:disc},btn,function(j){
++    showOut(j);
++    if(j.ok){
++      showOk("Bill saved.");
++      $("blines").value="";$("bphone").value="";$("bdisc").value="0";
++      $("upiarea").style.display="none";$("upiarea").innerHTML="";
++      var m=(j.stdout||"").match(/Bill #(\d+)/);
++      refresh(function(){if(m)maybeUpi(m[1]);});
++    }else{
++      showErr(j.stderr||j.stdout||"The bill was not saved.");
++    }
++  });
++}
++function maybeUpi(billNo){
++  var area=$("upiarea");
++  if(!LIVE||!CONFIG||!CONFIG.settings||!CONFIG.settings.upi_vpa)return;
++  var net=0, bn=parseInt(billNo,10);
++  DATA.bills.forEach(function(b){if(parseInt(b.billNo,10)===bn&&b.action==="SELL")net+=(b.lineTotal||0);});
++  if(net<=0)return;
++  fetch("/api/upiqr?amount="+toRs(net)+"&note="+encodeURIComponent("Bill "+billNo))
++    .then(function(r){return r.json();})
++    .then(function(j){
++      if(!j.ok)return;
++      var qr=(j.kind==="svg")?j.data:"<img alt=\"UPI QR\" src=\"data:image/png;base64,"+j.data+"\">";
++      area.innerHTML=qr+"<div class=\"dim2\">Scan to pay "+fmt(net)+" — Bill #"+esc(billNo)+"</div>";
++      area.style.display="inline-block";
++    }).catch(function(){});
++}
++/* ── cancel / return ─────────────────────────────────────────────── */
++function doVoid(btn){
++  var bno=($("vno").value||"").trim();
++  if(!/^\d+$/.test(bno)){showErr("Type the bill number first (just the number, e.g. 5).");return;}
++  if(!confirm("Cancel bill #"+bno+"? Every item goes back into stock. This cannot be undone."))return;
++  apiPost("/api/void",{billNo:bno},btn,function(j){
++    showOut(j);
++    if(j.ok){showOk("Bill #"+bno+" cancelled. Items are back in stock.");$("vno").value="";refresh();}
++    else showErr(j.stderr||j.stdout||"Bill #"+bno+" was not cancelled.");
++  });
++}
++function doReturn(btn){
++  var bno=($("rno").value||"").trim();
++  if(!/^\d+$/.test(bno)){showErr("Type the bill number first (just the number, e.g. 5).");return;}
++  var qtys=($("rqty").value||"").trim();
++  if(qtys&&!/^\d+:\d+(,\d+:\d+)*$/.test(qtys.replace(/\s+/g,""))){showErr("Items must look like 8901234567890:1,8901234567891:2 (or leave blank to return everything).");return;}
++  if(!confirm("Take back items from bill #"+bno+" and put them in stock?"))return;
++  apiPost("/api/return",{billNo:bno,qtys:qtys,reason:($("rreason").value||"").trim()},btn,function(j){
++    showOut(j);
++    if(j.ok){showOk("Return saved for bill #"+bno+".");$("rno").value="";$("rqty").value="";$("rreason").value="";refresh();}
++    else showErr(j.stderr||j.stdout||"The return was not saved.");
++  });
++}
++/* ── barcode scanning (browser BarcodeDetector only — never a
++      third-party decoder; graceful inline hint when absent) ───────── */
++var SCAN={stream:null,timer:null};
++function appendCode(code){
++  code=String(code||"").trim();if(!code)return;
++  var v=$("blines").value.trim();
++  $("blines").value=(v?v+"\n":"")+code+" 1";
++}
++function scanStop(){
++  if(SCAN.timer){clearInterval(SCAN.timer);SCAN.timer=null;}
++  if(SCAN.stream){SCAN.stream.getTracks().forEach(function(t){t.stop();});SCAN.stream=null;}
++  $("scanarea").innerHTML="";
++  var st=$("scanstop");if(st)st.style.display="none";
++}
++function scanCam(){
++  if(typeof window.BarcodeDetector==="undefined"){
++    $("scanhint").textContent="Camera scanning needs Chrome, Edge or Brave. Type the barcode below — or use ./shopkeep.sh scan on the shop computer.";
++    return;
++  }
++  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
++    $("scanhint").textContent="This browser cannot open the camera here. Type the barcode below.";return;
++  }
++  navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(function(stream){
++    SCAN.stream=stream;
++    var v=document.createElement("video");
++    v.setAttribute("playsinline","true");v.muted=true;
++    $("scanarea").innerHTML="";$("scanarea").appendChild(v);
++    var st=$("scanstop");if(st)st.style.display="inline-block";
++    v.srcObject=stream;v.play();
++    var det=new window.BarcodeDetector();
++    SCAN.timer=setInterval(function(){
++      det.detect(v).then(function(codes){
++        if(codes&&codes.length){appendCode(codes[0].rawValue);scanStop();showOk("Barcode added: "+codes[0].rawValue);}
++      }).catch(function(){});
++    },350);
++  }).catch(function(){
++    $("scanhint").textContent="Camera unavailable (permission denied or no camera). Type the barcode below.";
++  });
++}
++function scanPhoto(input){
++  if(!input.files||!input.files[0])return;
++  if(typeof window.BarcodeDetector==="undefined"){
++    $("scanhint").textContent="Photo scanning needs Chrome, Edge or Brave. Type the barcode below — or use: ./shopkeep.sh scan --image <photo>";
++    input.value="";return;
++  }
++  var det=new window.BarcodeDetector();
++  createImageBitmap(input.files[0]).then(function(bm){return det.detect(bm);}).then(function(codes){
++    if(codes&&codes.length){appendCode(codes[0].rawValue);showOk("Barcode added: "+codes[0].rawValue);}
++    else $("scanhint").textContent="No barcode found in that photo — try a clearer one, or type the barcode.";
++  }).catch(function(){$("scanhint").textContent="Could not read that photo — try a clearer one, or type the barcode.";});
++  input.value="";
++}
++/* ── product add / edit / restock / remove ───────────────────────── */
++function openAddForm(){
++  EDITBC=null;
++  ["f_bc","f_name","f_price","f_qty","f_thr","f_type","f_desc","f_expiry","f_hsn"].forEach(function(id){$(id).value="";});
++  $("f_bc").disabled=false;$("f_qtyrow").style.display="";
++  $("h_add").textContent="Add product";
++  $("btnPsave").textContent="Save product";
++  $("pform").style.display="";
++  showTab("tab-products");$("f_name").focus();
++}
++function openEditForm(bc){
++  var p=null;
++  DATA.products.forEach(function(x){if(String(x.barcode)===String(bc))p=x;});
++  if(!p)return;
++  EDITBC=String(bc);
++  $("f_bc").value=p.barcode;$("f_bc").disabled=true;
++  $("f_name").value=p.name;$("f_price").value=toRs(p.pricePaise);
++  $("f_qty").value="";$("f_qtyrow").style.display="none";
++  $("f_thr").value=p.threshold;$("f_type").value=p.type||"";
++  $("f_desc").value=p.description||"";$("f_expiry").value=p.expiryDate||"";
++  $("f_hsn").value=p.hsnCode||"";
++  $("h_add").textContent="Edit product "+p.barcode;
++  $("btnPsave").textContent="Save changes";
++  $("pform").style.display="";
++  showTab("tab-products");
++}
++function closePform(){$("pform").style.display="none";EDITBC=null;}
++function saveProduct(btn){
++  var name=($("f_name").value||"").trim();
++  var price=($("f_price").value||"").trim();
++  var thr=($("f_thr").value||"").trim();
++  var expiry=($("f_expiry").value||"").trim();
++  var bc=($("f_bc").value||"").trim();
++  if(!name){showErr("Please enter the product name.");return;}
++  if(!/^\d+(\.\d{1,2})?$/.test(price)){showErr("Price must be a number like 25 or 25.50.");return;}
++  if(thr&&!/^\d+$/.test(thr)){showErr("Low-stock alert must be a whole number.");return;}
++  if(expiry&&!/^\d{4}-\d{2}-\d{2}$/.test(expiry)){showErr("Expiry must look like 2026-12-31.");return;}
++  var body={name:name,price:price,threshold:thr,type:($("f_type").value||"").trim(),
++            desc:($("f_desc").value||"").trim(),expiry:expiry,hsn:($("f_hsn").value||"").trim()};
++  if(EDITBC){
++    body.barcode=EDITBC;
++    apiPost("/api/edit",body,btn,function(j){
++      if(j.ok){showOk("Product updated.");closePform();refresh();}
++      else showErr(j.stderr||j.stdout||"The change was not saved.");
++    });
++  }else{
++    var qty=($("f_qty").value||"").trim();
++    if(bc&&!/^\d+$/.test(bc)){showErr("Barcode must be digits only (leave blank for an automatic one).");return;}
++    if(!/^\d+$/.test(qty)){showErr("Qty in stock must be a whole number (0 or more).");return;}
++    body.barcode=bc;body.qty=qty;
++    apiPost("/api/add",body,btn,function(j){
++      if(j.ok){showOk("Product added.");closePform();refresh();}
++      else showErr(j.stderr||j.stdout||"The product was not saved.");
++    });
++  }
++}
++function doRestock(bc,btn){
++  var p=null;
++  DATA.products.forEach(function(x){if(String(x.barcode)===String(bc))p=x;});
++  var nm=p?p.name:bc;
++  var q=prompt("How many units of "+nm+" arrived?", "1");
++  if(q===null)return;
++  q=String(q).trim();
++  if(!/^\d+$/.test(q)||Number(q)<=0){showErr("Enter a whole number of units (at least 1).");return;}
++  apiPost("/api/restock",{barcode:bc,qty:q},btn,function(j){
++    if(j.ok){showOk("Stock added: "+nm+" +"+q);refresh();}
++    else showErr(j.stderr||j.stdout||"Stock was not added.");
++  });
++}
++function doRemove(bc,btn){
++  var p=null;
++  DATA.products.forEach(function(x){if(String(x.barcode)===String(bc))p=x;});
++  var nm=p?p.name:bc;
++  if(!confirm("Remove "+nm+" ("+bc+") from the product list permanently?\nThe sales history stays. This cannot be undone."))return;
++  apiPost("/api/remove",{barcode:bc},btn,function(j){
++    if(j.ok){showOk(nm+" removed.");refresh();}
++    else showErr(j.stderr||j.stdout||"The product was not removed.");
++  });
++}
++/* ── trays & categories ──────────────────────────────────────────── */
++function doTrayAdd(btn){
++  var bc=($("t_bc").value||"").trim(),name=($("t_name").value||"").trim();
++  var items=($("t_items").value||"").trim().replace(/\s+/g,"");
++  if(!/^\d+$/.test(bc)){showErr("Tray barcode must be digits (combo trays use 2xxx numbers).");return;}
++  if(!name){showErr("Give the tray a name.");return;}
++  if(!/^\d+:\d+(,\d+:\d+)*$/.test(items)){showErr("Items must look like 8901234567890:2,8901234567891:1.");return;}
++  apiPost("/api/tray-add",{barcode:bc,name:name,items:items},btn,function(j){
++    if(j.ok){showOk("Tray created.");$("t_bc").value="";$("t_name").value="";$("t_items").value="";refresh();}
++    else showErr(j.stderr||j.stdout||"The tray was not created.");
++  });
++}
++function doTrayRemove(bc,name,btn){
++  if(!confirm("Remove combo tray "+(name||bc)+" ("+bc+")?\nThe products themselves are NOT deleted."))return;
++  apiPost("/api/tray-remove",{barcode:bc},btn,function(j){
++    if(j.ok){showOk("Tray removed.");refresh();}
++    else showErr(j.stderr||j.stdout||"The tray was not removed.");
++  });
++}
++function doCatAdd(btn){
++  var name=($("c_name").value||"").trim(),emoji=($("c_emoji").value||"").trim();
++  if(!name){showErr("Give the category a name.");return;}
++  apiPost("/api/category-add",{name:name,emoji:emoji},btn,function(j){
++    if(j.ok){showOk("Category added.");$("c_name").value="";$("c_emoji").value="";refresh();}
++    else showErr(j.stderr||j.stdout||"The category was not added.");
++  });
++}
++/* ── data: backup / export / import ──────────────────────────────── */
++function doBackup(btn){
++  apiPost("/api/backup",{},btn,function(j){
++    $("dataout").textContent=(j.stdout||"")+(j.stderr?"\n"+j.stderr:"");
++    if(j.ok)showOk("Backup created — stored in the backups folder.");
++    else showErr(j.stderr||j.stdout||"Backup failed.");
++  });
++}
++function doExport(btn){
++  apiPost("/api/export",{scope:$("ex_scope").value},btn,function(j){
++    $("dataout").textContent=(j.stdout||"")+(j.stderr?"\n"+j.stderr:"");
++    if(j.ok&&j.files&&j.files.length){
++      j.files.forEach(function(f){
++        if(EXPORTS.indexOf(f)<0)EXPORTS.unshift(f);
++      });
++      renderExports();
++      showOk("Export ready — click a file to download it.");
++    }else if(j.ok){
++      showErr("Nothing to export yet — no data found.");
++    }else{
++      showErr(j.stderr||j.stdout||"Export failed.");
++    }
++  });
++}
++function renderExports(){
++  var h="";
++  EXPORTS.forEach(function(f){
++    h+="<a href=\"/api/download/"+encodeURIComponent(f)+"\">⬇ "+esc(f)+"</a>";
++  });
++  $("dllinks").innerHTML=h;
++}
++function impFileChange(input){
++  var f=input.files&&input.files[0];
++  IMPCSV=null;IMPOK=false;
++  $("btnImpReal").disabled=true;$("btnImpCheck").disabled=true;
++  $("imp_report").textContent="The shopkeeper program checks your file here.";
++  if(!f)return;
++  var reader=new FileReader();
++  reader.onload=function(){IMPCSV=String(reader.result||"");$("btnImpCheck").disabled=false;};
++  reader.onerror=function(){showErr("Could not read that file — try opening it and saving it again.");};
++  reader.readAsText(f,"utf-8");
++}
++function doImpCheck(btn){
++  if(!IMPCSV){showErr("Choose a CSV file first.");return;}
++  apiPost("/api/import",{csv:IMPCSV,dryRun:true},btn,function(j){
++    $("imp_report").textContent=(j.stdout||"")+(j.stderr?"\n"+j.stderr:"");
++    if(j.ok){IMPOK=true;$("btnImpReal").disabled=false;showOk("File checks out — now click 'Import for real'.");}
++    else{IMPOK=false;$("btnImpReal").disabled=true;showErr("The file has problems — nothing was saved. Fix the lines above, then check again.");}
++  });
++}
++function doImpReal(btn){
++  if(!IMPOK){showErr("Run the check first — it must pass before importing.");return;}
++  if(!confirm("Add these products to your stock now?\nThis cannot be undone (but you can remove any product later)."))return;
++  apiPost("/api/import",{csv:IMPCSV,dryRun:false},btn,function(j){
++    $("imp_report").textContent=(j.stdout||"")+(j.stderr?"\n"+j.stderr:"");
++    if(j.ok){
++      showOk("Products imported.");
++      IMPCSV=null;IMPOK=false;
++      $("imp_file").value="";$("btnImpReal").disabled=true;$("btnImpCheck").disabled=true;
++      refresh();
++    }else{
++      showErr("Nothing was saved — see the report above.");
++    }
++  });
++}
++/* ── settings & language ─────────────────────────────────────────── */
++function renderSettings(){
++  if(!CONFIG)return;
++  var s=CONFIG.settings||{};
++  $("s_shop_name").value=s.shop_name||"";
++  $("s_gstin").value=s.gstin||"";
++  $("s_phone").value=s.phone||"";
++  $("s_address").value=s.address||"";
++  $("s_threshold").value=s.default_threshold||"";
++  $("s_upi_vpa").value=s.upi_vpa||"";
++  var sel=$("s_lang"),cur=s.lang||"en";
++  var h="";
++  (CONFIG.langs||[]).forEach(function(l){
++    h+="<option value=\""+esc(l[0])+"\""+(l[0]===cur?" selected":"")+">"+esc(l[1])+"</option>";});
++  sel.innerHTML=h;
++}
++function saveSettings(btn){
++  var thr=($("s_threshold").value||"").trim();
++  if(thr&&!/^\d+$/.test(thr)){showErr("Default low-stock alert must be a whole number.");return;}
++  var body={settings:{
++    shop_name:($("s_shop_name").value||"").trim(),
++    gstin:($("s_gstin").value||"").trim(),
++    phone:($("s_phone").value||"").trim(),
++    address:($("s_address").value||"").trim(),
++    default_threshold:thr,
++    upi_vpa:($("s_upi_vpa").value||"").trim()
++  }};
++  apiPost("/api/config",body,btn,function(j){
++    if(j.ok){
++      showOk("Settings saved.");
++      loadConfig().then(function(){renderHeader();renderSettings();});
++    }else{
++      var msgs=[];
++      (j.results||[]).forEach(function(r){if(!r.ok&&r.stderr)msgs.push(r.stderr);});
++      showErr(msgs.join("\n")||j.stderr||"Settings were not saved.");
++    }
++  });
++}
++function langChange(sel){
++  var code=sel.value;
++  apiPost("/api/config",{key:"lang",value:code},sel,function(j){
++    if(j.ok){showOk("Language saved — reloading…");setTimeout(function(){location.reload();},900);}
++    else showErr((j.results&&j.results[0]&&j.results[0].stderr)||j.stderr||"Language not saved.");
++  });
+ }
++var EXPORTS=[];
+ boot();
+ </script>
+ </body>
+@@ -4853,6 +5529,8 @@ chmod +x shopkeep.sh
+ ./shopkeep.sh backup
+ ./shopkeep.sh publish <barcode>|all [--dry-run]   # push to Open Products / Open Food Facts
+ ./shopkeep.sh web                 # (re)generate shopkeep-dashboard.html (self-contained)
++./shopkeep.sh start               # regenerate + launch the local dashboard server, open browser
++./shopkeep.sh stop                # stop the local server (pidfile only)
+ ./shopkeep.sh --doctor | --selftest | --gen-files | -h | -V
+ ```
+ 
+@@ -4871,7 +5549,7 @@ chmod +x shopkeep.sh
+ - **QR code generation** (zint -b 58) + SVG fallback for receipts and labels.
+ - **EAN-13 retail barcodes** for 13-digit codes; Code128 otherwise.
+ - **Combo trays + Category trays** (Blinkit-style scan a tray to add all items). Only 2xxx COMBO trays sell at billing; 3xxx category trays are organizational groupings and are refused with a clear error.
+-- **Dashboard**: `./shopkeep.sh web` generates shopkeep-dashboard.html — one self-contained file (inline CSS/JS, zero external requests). Double-click for a read-only snapshot; run `python3 shopkeep-web.py` for live mode + billing on http://127.0.0.1:8000.
++- **Dashboard**: `./shopkeep.sh web` generates shopkeep-dashboard.html — one self-contained file (inline CSS/JS, zero external requests). Double-click for a read-only snapshot; run `./shopkeep.sh start` (or `python3 shopkeep-web.py`) for the full button dashboard — billing, scan, add/edit/restock/remove, trays, categories, void/return, backup/export/download, import with the real validator, settings + language, UPI QR — on http://127.0.0.1:8000; `./shopkeep.sh stop` stops it.
+ - **1:1 ledger reconcile**: every bills.csv SELL line writes one inventory_log.csv SALE row (detail=bill=<no>).
+ - **Online barcode lookup** uses the free, public Open Food Facts / Open Products Facts / UPCitemDB APIs. NOT Blinkit/Zepto/Amazon/Flipkart — they don't expose public barcode lookup APIs.
+ - **No government API push**: there's no public Indian government retail-barcode API. For GST-registered shops, print your GSTIN on receipts (built-in). GST e-invoicing (einvoice1.gst.gov.in) is for B2B >= Rs.50,000 only.
+@@ -4884,7 +5562,7 @@ chmod +x shopkeep.sh
+ - trays.csv: tray_barcode,name,item_barcode,item_name,item_qty,item_price_paise
+ - categories.csv: name,emoji,tray_barcode
+ - state: next_bill_no=N
+-- shopkeep.conf: shop_name, default_threshold, gstin, address, phone, lang
++- shopkeep.conf: shop_name, default_threshold, gstin, address, phone, lang, upi_vpa
+ - backups/: shopkeep-<ts>.tar.gz (last 14 kept)
+ - labels/: <barcode>.png (via zint) or .svg fallback + product images
+ 
+@@ -5928,6 +6606,96 @@ print_upi_line() {
+     printf '%s\n' " $(t upi_scan_to_pay): $qr"
+ }
+ 
++#─────────────────────────────────────────────────────────────────────────────
++# v1.4.0 Phase 5C — one-command launcher for the local button dashboard.
++#   start: regenerate the dashboard, launch shopkeep-web.py in the background
++#          (pidfile shopkeep-data/server.pid, log shopkeep-data/server.log),
++#          wait for the port, open the browser. Re-running is safe.
++#   stop:  kill EXACTLY the pid in the pidfile (never pkill by name).
++#─────────────────────────────────────────────────────────────────────────────
++WEB_URL="http://127.0.0.1:8000"
++
++cmd_start() {
++    init_dirs
++    command -v python3 >/dev/null || { err "python3 is required for the dashboard server"; return 2; }
++    local pidfile="$DATA_DIR/server.pid"
++    exec 201>"$pidfile.lock"; flock 201          # serialise concurrent start/stop
++    if [[ -f "$pidfile" ]]; then
++        local pid; pid=$(cat "$pidfile" 2>/dev/null || true)
++        if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
++            echo "Already running (pid $pid) at $WEB_URL"
++            flock -u 201 2>/dev/null; exec 201>&- 2>/dev/null
++            return 0
++        fi
++        rm -f "$pidfile"                          # stale pid after a crash/power cut
++    fi
++    log "Regenerating dashboard…"
++    cmd_web || true
++    log "Starting the shopkeep dashboard server…"
++    ( cd "$SCRIPT_DIR" && exec nohup python3 shopkeep-web.py >>"$DATA_DIR/server.log" 2>&1 ) &
++    echo $! > "$pidfile"
++    local pid2 up=0 i
++    pid2=$(cat "$pidfile" 2>/dev/null || true)
++    for ((i=0; i<25; i++)); do
++        if ! kill -0 "$pid2" 2>/dev/null; then break; fi
++        if (exec 3<>/dev/tcp/127.0.0.1/8000) 2>/dev/null; then up=1; break; fi
++        sleep 0.2
++    done
++    flock -u 201 2>/dev/null; exec 201>&- 2>/dev/null
++    if (( ! up )); then
++        rm -f "$pidfile"
++        if kill -0 "$pid2" 2>/dev/null; then
++            err "Server did not open port 8000 after 5s — see $DATA_DIR/server.log"
++        else
++            err "Server failed to start (is port 8000 busy?) — see $DATA_DIR/server.log"
++        fi
++        return 1
++    fi
++    echo
++    box_top
++    box_center "Shop dashboard is ON"
++    box_center "$WEB_URL"
++    box_bottom
++    echo
++    if command -v xdg-open >/dev/null 2>&1; then
++        ( xdg-open "$WEB_URL" >/dev/null 2>&1 & ) || true
++        log "Opening $WEB_URL in your browser…"
++    else
++        log "Open $WEB_URL in your browser (Chrome/Edge recommended)."
++    fi
++    return 0
++}
++
++cmd_stop() {
++    init_dirs
++    local pidfile="$DATA_DIR/server.pid"
++    exec 201>"$pidfile.lock"; flock 201
++    if [[ ! -f "$pidfile" ]]; then
++        log "Not running (no pid file)."
++        flock -u 201 2>/dev/null; exec 201>&- 2>/dev/null
++        return 0
++    fi
++    local pid; pid=$(cat "$pidfile" 2>/dev/null || true)
++    if ! [[ "$pid" =~ ^[0-9]+$ ]] || ! kill -0 "$pid" 2>/dev/null; then
++        rm -f "$pidfile"
++        log "Stale pid file removed — server was not running."
++        flock -u 201 2>/dev/null; exec 201>&- 2>/dev/null
++        return 0
++    fi
++    kill "$pid" 2>/dev/null || true
++    local i
++    for ((i=0; i<10; i++)); do
++        kill -0 "$pid" 2>/dev/null || break
++        sleep 0.2
++    done
++    if kill -0 "$pid" 2>/dev/null; then
++        kill -9 "$pid" 2>/dev/null || true
++    fi
++    rm -f "$pidfile"
++    flock -u 201 2>/dev/null; exec 201>&- 2>/dev/null
++    log "Stopped (pid $pid)."
++}
++
+ #─────────────────────────────────────────────────────────────────────────────
+ # Main dispatcher
+ #─────────────────────────────────────────────────────────────────────────────
+@@ -5967,6 +6735,8 @@ main() {
+         gen-label)  shift; cmd_gen_label "$@" ;;
+         gen-qr)     shift; cmd_gen_qr "$@" ;;
+         web)        cmd_web ;;
++        start)      shift; cmd_start ;;
++        stop)       shift; cmd_stop ;;
+         --doctor|-d)   cmd_doctor ;;
+         --selftest|-t) cmd_selftest ;;
+         --gen-files)   cmd_gen_files ;;
+@@ -5977,7 +6747,7 @@ Run with no args for the interactive menu.
+ Commands: add, edit, restock, remove, search, inventory, category, tray, bill,
+           quickbill, scan, import, lowstock, expiry, summary, report, void,
+           return, whatsapp, stockvalue, inventorylog, lang, backup, config,
+-          publish, export, gen-label, gen-qr, upi-qr, web,
++          publish, export, gen-label, gen-qr, upi-qr, web, start, stop,
+           --doctor, --selftest, --gen-files, -V
+ EOF
+                        ;;
+-- 
+2.47.3
+

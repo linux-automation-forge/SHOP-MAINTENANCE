@@ -1,0 +1,721 @@
+From de47f127907353075a6bf15b541bd522b93185a7 Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Mon, 28 Sep 2026 12:38:02 +0000
+Subject: [PATCH 5/5] =?UTF-8?q?v1.4.0:=20full=20shopkeeper=20GUI=20?=
+ =?UTF-8?q?=E2=80=94=20every=20button;=20scan=20(camera+image),=20quickbil?=
+ =?UTF-8?q?l,=20import,=20report,=20excel-safe=20export,=20UPI=20QR,=20sta?=
+ =?UTF-8?q?rt/stop=20launcher;=20i18n=20lang=20fix;=20deep=20debug=20pass?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ README.md   | 493 +++++++++++++++++++++++++++++++++++-----------------
+ shopkeep.sh |  96 +++++++++-
+ 2 files changed, 428 insertions(+), 161 deletions(-)
+
+diff --git a/README.md b/README.md
+index 2a5e822..4416092 100755
+--- a/README.md
++++ b/README.md
+@@ -2,8 +2,11 @@
+ 
+ A single-file Bash point-of-sale and inventory system for small retail shops.
+ No cloud. No database. No internet required. All data lives in plain CSV files
+-that open directly in Excel. Ships with a self-contained HTML dashboard and an
+-optional localhost web UI with billing (`shopkeep-web.py`, Python stdlib only).
++that open directly in Excel. Ships with a self-contained HTML button dashboard
++and a localhost web UI with billing (`shopkeep-web.py`, Python stdlib only —
++no pip, no frameworks).
++
++**Version 1.4.0.**
+ 
+ ## User story
+ 
+@@ -13,146 +16,257 @@ today, fix a mistake she made on a bill, and never lose her data if the power
+ cuts out mid-sale. `shopkeep.sh` does exactly that, and nothing more — on
+ purpose.
+ 
+-## Quick start
++## Quick start for shop owners
++
++**Start with the dashboard. The terminal is optional.**
+ 
+ ```bash
+ chmod +x shopkeep.sh
+-./shopkeep.sh              # interactive menu (18 options + 0 to exit)
+-./shopkeep.sh --doctor     # check dependencies
+-./shopkeep.sh --selftest   # integrity tests (28 checks)
++./shopkeep.sh start        # ONE command: prepares everything, starts the
++                           # dashboard, opens your browser
+ ```
+ 
+-## Dashboard (new in v1.3.0)
++You will see:
+ 
+-```bash
+-./shopkeep.sh web          # (re)generates shopkeep-dashboard.html
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
+-./shopkeep.sh start        # regenerate + launch the local dashboard server, open browser
+-./shopkeep.sh stop         # stop the local server (pidfile only)
++```
++┌──────────────────────────────────┐
++│      Shop dashboard is ON        │
++│      http://127.0.0.1:8000       │
++└──────────────────────────────────┘
+ ```
+ 
+-ONE self-contained file — inline CSS/JS, zero external requests (no CDN, no
+-web fonts, no remote images), a JSON snapshot of your data baked in at
+-generation time. Two ways to use it:
+-
+-- **Read-only snapshot** — double-click the file (`file://`). A banner reminds
+-  you: *"Read-only snapshot — run python3 shopkeep-web.py for live mode +
+-  billing."*
+-- **Live mode + billing** — `python3 shopkeep-web.py`, then open
+-  `http://127.0.0.1:8000`. The server binds 127.0.0.1 ONLY, reads the CSVs for
+-  display, and forwards billing to `./shopkeep.sh bill` as a subprocess —
+-  **shopkeep.sh stays the ONLY writer to the CSVs**; Python never writes them.
++and your browser opens at `http://127.0.0.1:8000` (Chrome or Edge recommended —
++they enable camera scanning). If the browser does not open by itself, open that
++address manually.
+ 
+-Panels: products (search / sort / low-stock highlight / expiry flags / HSN),
+-categories & combo trays, today's sales (revenue, units, bills, voided, top
+-products), inventory log (newest first, filter by event type), and a billing
+-form (barcode-qty lines + phone + discount %) in live mode. All money math in
+-the browser is integer paise; ₹ is applied only at display time.
++Your day from the dashboard:
+ 
+-## Usage
++1. **Billing** tab — type or scan barcodes, set phone + discount, press
++   **Charge bill**. A big green box confirms the bill; the receipt appears
++   below. If your UPI ID is configured (Settings), the payment QR appears too.
++2. **Products** tab — **+ Add product**, and on every row **+ Stock** / **Edit**
++   / **Remove**. Create categories and combo trays here.
++3. **Reports** tab — pick a date range, or tap the Low stock / Expired /
++   Expiring ≤ 7 days chips. Totals are computed live in the browser.
++4. **Data & backup** tab — **Backup now** any time; **Export CSVs** gives you
++   Excel-safe copies to download; **Import** bulk-loads products from a CSV
++   (press **Check file** first — you see the real validation report before
++   anything is written).
++5. **Settings** tab — shop name, GSTIN, address, phone, UPI ID, language.
+ 
+-### Interactive menu (no arguments)
++Closing time:
+ 
+-```
+- 1) New bill          2) Add product      3) Manage product
+- 4) Search            5) Inventory        6) Low stock
+- 7) Expiry            8) Summary          9) Stock value
+-10) Void             11) Return          12) Trays
+-13) Categories       14) WhatsApp        15) Backup
+-16) Config           17) Publish         18) Language
+- 0) Exit
++```bash
++./shopkeep.sh stop         # stops the dashboard server (safe to re-run)
+ ```
+ 
+-### Non-interactive (cron / scripting friendly)
++And at least once a week (it takes a second):
+ 
+ ```bash
+-# Add a product (barcode auto-assigned if omitted; internal 20-prefix EAN-13)
+-./shopkeep.sh add --name "Tata Salt 1kg" --price 25.00 --qty 24
+-./shopkeep.sh add --name "Parle-G" --price 5 --qty 50 --barcode 8901234567890 --threshold 10 \
+-                --expiry 2026-12-31 --hsn 2501
++./shopkeep.sh backup       # tar.gz of all data into backups/ (last 14 kept)
++```
+ 
+-# Bill: feed "barcode qty" lines on stdin (qty defaults to 1 if omitted).
+-# Combo TRAY barcodes (2xxx) auto-expand into their items.
+-# Category-tray barcodes (3xxx) are REFUSED — they are organizational
+-# groupings, not sellable combos; scan individual products instead.
+-printf '8901234567890 2\n8901234567891 1\n' | ./shopkeep.sh bill --phone 9876543210 --discount 10
++A backup also runs automatically on the first start of each new day.
++
++Terminal people can run `./shopkeep.sh` with no arguments for the interactive
++menu (18 options + 0 to exit), or `--doctor` to check dependencies and
++`--selftest` for the 41-check integrity battery.
++
++## The dashboard
++
++ONE self-contained HTML file — inline CSS/JS, zero external requests (no CDN,
++no web fonts, no remote images), with a JSON snapshot of your data baked in.
++Two ways to use it:
++
++- **Live mode (buttons on)** — `./shopkeep.sh start` (or `python3
++  shopkeep-web.py`), then open `http://127.0.0.1:8000`. The server binds
++  127.0.0.1 ONLY, reads the CSVs for display, and forwards every change to
++  `./shopkeep.sh` as a subprocess — **shopkeep.sh stays the ONLY writer to the
++  CSVs**; Python never writes them (one narrow exception: see `/api/import`).
++- **Read-only snapshot** — double-click `shopkeep-dashboard.html` (`file://`).
++  A banner reminds you it is a snapshot. Every mutating button is REMOVED from
++  the page in this mode (hidden, not greyed out), so a snapshot can never
++  change your data.
++
++### Every button, and what it really does
++
++| Tab | Button | HTTP call | Runs |
++|-----|--------|-----------|------|
++| Billing | Charge bill | `POST /api/bill` | `bill` |
++| Billing | Scan (camera / photo) | — (browser decodes locally) | fills the bill lines for you |
++| Billing | Void a bill | `POST /api/void` | `void` |
++| Billing | Return items | `POST /api/return` | `return` |
++| Billing | UPI QR (after a saved bill) | `GET /api/upiqr` | `upi-qr` |
++| Products | + Add product | `POST /api/add` | `add` |
++| Products | + Stock (per row) | `POST /api/restock` | `restock` |
++| Products | Edit (per row) | `POST /api/edit` | `edit` |
++| Products | Remove (per row) | `POST /api/remove` | `remove` |
++| Products | + Category | `POST /api/category-add` | `category add` |
++| Products | + Combo tray | `POST /api/tray-add` | `tray add` |
++| Products | Remove tray | `POST /api/tray-remove` | `tray remove` |
++| Reports | date range, filters, stock value | — (computed in your browser from `/api/*.json`) | — |
++| Data & backup | Backup now | `POST /api/backup` | `backup` |
++| Data & backup | Export CSVs | `POST /api/export` | `export` |
++| Data & backup | Download an exported CSV | `GET /api/download/<file>` | — |
++| Data & backup | Check file / Import for real | `POST /api/import` | `import --dry-run` / `import` |
++| Settings | Save settings | `POST /api/config` | `config` |
++
++Safety rails you can feel: every button shows a busy state and disables itself
++while working (a double-click can never charge two bills — server-side `flock`
++makes that a guarantee, not a promise); destructive actions ask in plain words
++("This cancels bill #5 and puts the items back in stock. Continue?"); success
++is a big green box; errors are a plain red box that shows **exactly** what
++shopkeep.sh said — never a stack trace.
++
++### Languages
++
++23 languages in the terminal (`./shopkeep.sh lang hi`). The dashboard's
++Settings dropdown offers English, हिन्दी, தமிழ், తెలుగు, বাংলা; every other
++language falls back to English for the few strings it lacks. Setting a language
++in Settings saves it to `shopkeep.conf` and it sticks for the terminal too.
++
++## Command reference
++
++Every subcommand (also `./shopkeep.sh -h`):
+ 
+-# Low stock report
+-./shopkeep.sh lowstock
++```
++add  edit  restock  remove  search  inventory  category  tray  bill  quickbill
++scan import  lowstock  expiry  summary  report  void  return  whatsapp
++stockvalue  inventorylog  lang  backup  config  export  publish  gen-label
++gen-qr  upi-qr  web  start  stop  --doctor  --selftest  --gen-files  -V
++```
+ 
+-# Stock inventory — grouped under category trays, or sorted
+-./shopkeep.sh inventory
+-./shopkeep.sh inventory price
++```bash
++# Products -------------------------------------------------------------------
++./shopkeep.sh add --name "Tata Salt 1kg" --price 25.00 --qty 24
++./shopkeep.sh add --name "Parle-G" --price 5 --qty 50 --barcode 8901234567890 \
++                --threshold 10 --expiry 2026-12-31 --hsn 2501
++                # barcode auto-assigned (2xxx in-store range) if omitted
++./shopkeep.sh edit <barcode> [--name X] [--price Y] [--threshold Z]
++./shopkeep.sh restock <barcode> --qty 12 [--reason "new crate"]
++./shopkeep.sh remove <barcode> [--reason "discontinued"]
++./shopkeep.sh search "salt"            # by barcode, name or type
++
++# Selling --------------------------------------------------------------------
++printf '8901234567890 2\n8901234567891 1\n' | ./shopkeep.sh bill \
++                --phone 9876543210 --discount 10
++                # combo TRAY (2xxx) barcodes auto-expand; category trays
++                # (3xxx) are REFUSED — they are groupings, not sellable
++./shopkeep.sh quickbill --phone 9876543210 --discount 5 8901234567890 2
++                # one-shot argv billing — the SAME engine, identical rows
++./shopkeep.sh void 7                   # cancels the whole bill, stock restored
++./shopkeep.sh return 7 --qty "8901234567890:1" --reason "damaged pack"
++./shopkeep.sh scan                     # camera scanning (needs zbar-tools)
++./shopkeep.sh scan --image photo.jpg   # decode from an image file
++./shopkeep.sh scan --image photo.jpg --bill   # decode AND bill it
++
++# Reports --------------------------------------------------------------------
++./shopkeep.sh lowstock
++./shopkeep.sh expiry [days]            # default horizon 14
++./shopkeep.sh summary [YYYY-MM-DD]     # default: today
++./shopkeep.sh report 2026-04-01 2026-04-30
++                # per-day breakdown + totals; totals == sum of per-day summaries
+ 
+-# Category trays (categories of products, each with its own emoji + barcode)
++# Stock organisation ---------------------------------------------------------
++./shopkeep.sh inventory [name|price|pricedesc|qty|category]
+ ./shopkeep.sh category list
+ ./shopkeep.sh category add "Cosmetics" "💄"
++./shopkeep.sh tray add                 # guided combo-tray creation
++./shopkeep.sh stockvalue
++./shopkeep.sh inventorylog [N]         # last N audit entries
++
++# Utilities ------------------------------------------------------------------
++./shopkeep.sh whatsapp [--print-url] <bill_no> [phone]
++./shopkeep.sh lang [code]              # 23 languages
++./shopkeep.sh backup
++./shopkeep.sh config shop_name "Kiran Mart & Cafe"
++./shopkeep.sh config upi_vpa yourname@upi   # enables UPI QR on receipts
++./shopkeep.sh export [products|bills|inventory_log|trays|categories|all]
++./shopkeep.sh import --template [OUT]  # write a starting CSV
++./shopkeep.sh import FILE [--dry-run]  # ALL-OR-NOTHING: one bad row writes nothing
++./shopkeep.sh upi-qr 250.50 "Bill 12"  # UPI payment QR (zint PNG or SVG)
++./shopkeep.sh publish <barcode>|all [--dry-run]   # Open Products Facts
++./shopkeep.sh gen-label <barcode> [out]           # EAN-13 shelf label
++./shopkeep.sh gen-qr "any text" [out]             # generic QR
++./shopkeep.sh web                      # (re)generate the dashboard HTML
++./shopkeep.sh start | stop             # dashboard launcher
++./shopkeep.sh --doctor | --selftest | --gen-files | -h | -V
++```
+ 
+-# Combo trays (sellable bundles with their own barcode)
+-./shopkeep.sh tray add
+-
+-# Daily summary (default: today)
+-./shopkeep.sh summary
+-./shopkeep.sh summary 2025-01-15
+-
+-# Void a bill (append-only — nothing is ever deleted)
+-./shopkeep.sh void 7
++Exit codes: `0` ok · `1` validation error / self-test failure · `2` missing
++dependency · `3` bad usage. (Scan with zbar missing exits 1 with a hint —
++per spec, before anything is touched.)
+ 
+-# Returns without voiding
+-./shopkeep.sh return 7
++> **Git users:** the first run auto-creates a `.gitignore` next to the script
++> (listing `shopkeep-data/`, `backups/`, `labels/`, `exports/`,
++> `shopkeep-dashboard.html`). An existing `.gitignore` is never overwritten.
+ 
+-# Send a bill on WhatsApp (wa.me deep-link)
+-./shopkeep.sh whatsapp 7 9876543210
+-./shopkeep.sh whatsapp --print-url 7
++## HTTP API (shopkeep-web.py, 127.0.0.1:8000 only)
+ 
+-# Shop settings (GSTIN is validated against the Indian 15-char format)
+-./shopkeep.sh config gstin 33ABCDE1234F1Z5
++Contract: every mutating endpoint validates input server-side FIRST, then runs
++the matching `shopkeep.sh` subcommand (list args, no shell — nothing to
++inject), and returns the same JSON envelope:
+ 
+-# Excel-safe CSV copies into shopkeep-data/exports/ (raw CSVs are never touched;
+-# cells starting with = + - @ get a leading apostrophe so Excel/Sheets treat
+-# them as text, never as formulas)
+-./shopkeep.sh export              # all files
+-./shopkeep.sh export products     # one file: products|bills|inventory_log|trays|categories
++```json
++{"ok": true|false, "exitCode": 0, "stdout": "...", "stderr": "..."}
++```
+ 
+-# Labels & QR codes
+-./shopkeep.sh gen-label 8901234567890
+-./shopkeep.sh gen-qr "bill #7 total Rs45.00"
++The dashboard refreshes ALL panels from the read endpoints after every
++mutation.
++
++**Read endpoints**
++
++| Endpoint | Returns |
++|----------|---------|
++| `GET /` | the dashboard itself, regenerated live |
++| `GET /api/products.json` | products.csv as JSON |
++| `GET /api/bills.json` | bills.csv as JSON |
++| `GET /api/categories.json` | categories.csv as JSON |
++| `GET /api/trays.json` | trays.csv as JSON |
++| `GET /api/inventorylog.json` | last 100 audit rows, newest first |
++| `GET /api/config.json` | shopkeep.conf (read-only) + language list |
++| `GET /api/download/<file>` | an export from `shopkeep-data/exports/` (filename resolved against the REAL exports listing — path traversal is rejected) |
++| `GET /api/upiqr?amount=&note=` | UPI QR — base64 PNG when zint exists, else SVG |
++
++**Mutating endpoints**
++
++| Endpoint | Body | Runs |
++|----------|------|------|
++| `POST /api/bill` | `{"lines":[..],"phone":..,"discount":..}` | `bill` |
++| `POST /api/add` | `{"name","price","qty"[,"barcode","threshold","desc","type","expiry","hsn"]}` | `add` |
++| `POST /api/edit` | `{"barcode"[,"name","price","threshold","desc","type","expiry","hsn"]}` | `edit` |
++| `POST /api/restock` | `{"barcode","qty"[,"reason"]}` (qty must be > 0) | `restock` |
++| `POST /api/remove` | `{"barcode"[,"reason"]}` | `remove` |
++| `POST /api/tray-add` | `{"barcode","name","items":"bc:qty,bc:qty"}` | `tray add` |
++| `POST /api/tray-remove` | `{"barcode"}` | `tray remove` |
++| `POST /api/category-add` | `{"name"[,"emoji"]}` | `category add` |
++| `POST /api/void` | `{"billNo"}` | `void` |
++| `POST /api/return` | `{"billNo"[,"qtys":"bc:qty,...","reason"]}` | `return` |
++| `POST /api/backup` | `{}` | `backup` |
++| `POST /api/export` | `{"scope": all\|products\|bills\|inventory_log\|trays\|categories}` → adds `"files":[...]` for download links | `export` |
++| `POST /api/config` | `{"key","value"}` or `{"settings":{...}}` (allowlist: shop_name, gstin, address, phone, default_threshold, lang, upi_vpa) | `config` |
++| `POST /api/import` | `{"csv":"<file text>","dryRun":true\|false}` — the REAL `shopkeep.sh import` validator report comes back verbatim | `import [--dry-run]` |
++
++Import is the ONE place Python touches a CSV file it will hand to the shell:
++the upload is written to a system temp dir **outside** `shopkeep-data/`, passed
++to `shopkeep.sh import` (which remains the only writer of your data files),
++and deleted immediately. Validation lives in the shell script — the GUI never
++re-implements it, so what you see in "Check file" is exactly what will happen.
++
++## Optional dependencies
+ 
+-# Maintenance
+-./shopkeep.sh --doctor
+-./shopkeep.sh --selftest
+-./shopkeep.sh --gen-files
+-./shopkeep.sh -h
+-./shopkeep.sh -V
+-```
++Required: **bash 4+**, coreutils, awk, flock.
+ 
+-Exit codes: `0` ok · `1` validation error / self-test failure · `2` missing
+-dependency · `3` bad usage.
++| Tool | Purpose | Without it |
++|------|---------|-----------|
++| python3 | dashboard live server (stdlib only, no pip) | file:// snapshots still work |
++| zbar-tools | camera + image barcode scanning (`sudo apt install zbar-tools`) | Scan shows a hint; typing bills still works |
++| zint | label/QR PNG output (`sudo apt install zint`) | pure-bash EAN-13 SVG + QR SVG fallback |
++| tar | backups (`sudo apt install tar`) | backup disabled, --doctor says so |
++| curl | online barcode lookup + publishing | lookup/publish off; everything else works |
+ 
+-> **Git users:** the first run auto-creates a `.gitignore` next to the script
+-> (listing `shopkeep-data/`, `backups/`, `labels/`, `exports/`,
+-> `shopkeep-dashboard.html`). An existing `.gitignore` is never overwritten.
++Everything degrades gracefully: if missing, the feature is simply disabled and
++`--doctor` reports it.
+ 
+ ## Data file schemas (under `./shopkeep-data/`)
+ 
+@@ -179,13 +293,13 @@ bill_no,timestamp,barcode,name,qty,unit_price_paise,line_total,action,phone,disc
+ - ONE ROW PER LINE ITEM, not per bill (mirrors how real POS databases normalize).
+ - `name` + `unit_price_paise` are copied INTO the row so historical bills stay
+   correct even after a price change later (audit history).
+-- `action` is `SELL` or `VOID`. Voiding appends `VOID` rows for the bill's line
+-  items and restores stock — nothing is ever deleted.
+-- `phone` is the customer's normalised mobile (`919876543210`), so bills are
+-  queryable by customer. `discount_paise` is the per-line discount applied.
++- `action` is `SELL`, `VOID` or `RETURN`. Voiding appends VOID rows for the
++  bill's line items and restores stock — nothing is ever deleted.
++- `phone` is the customer's normalised mobile, so bills are queryable by
++  customer. `discount_paise` is the per-line discount applied.
+ - **1:1 reconcile:** every committed `SELL` row has exactly one matching
+-  `SALE` row in `inventory_log.csv` (detail `bill=<bill_no>`). VOID reversal
+-  rows are logged the same way.
++  `SALE` row in `inventory_log.csv` (detail `bill=<bill_no>`). VOID and
++  RETURN movements are logged the same way.
+ 
+ ### inventory_log.csv
+ ```
+@@ -209,6 +323,7 @@ address=Shop 12, MG Road
+ phone=9876543210
+ default_threshold=8
+ lang=en
++upi_vpa=yourname@upi
+ ```
+ 
+ ### categories.csv  (category trays — organizational, NOT sellable)
+@@ -234,6 +349,14 @@ Combo-tray barcodes are 13 digits starting with **2**. Scan a combo tray at
+ billing and it expands into its items (per-item stock is decremented, so the
+ ledger stays truthful).
+ 
++### Other files
++- `shopkeep-data/exports/` — Excel-safe CSV copies (via `export`); raw CSVs
++  are never touched.
++- `shopkeep-data/server.pid`, `shopkeep-data/server.log` — dashboard server
++  (written by `start`/`stop`; stop kills EXACTLY the pid in the pidfile).
++- `backups/`, `labels/` sit beside `shopkeep-data/`; `labels/` also holds
++  `upi-bill<N>.png|svg` payment QRs when `upi_vpa` is set.
++
+ ## Real product lookup (optional garnish)
+ 
+ With internet + curl, `Add product` with a REAL barcode looks it up on Open
+@@ -247,7 +370,8 @@ is never required, and every other feature works fully without it.
+ ## How integrity is guaranteed
+ 
+ - **Money is integer paise.** "25.5" → exactly 2550. Zero rounding drift across
+-  thousands of bills. Rupees are produced only at display time.
++  thousands of bills. Rupees are produced only at display time — including in
++  the browser, where totals are computed on integer paise in JS.
+ - **Every read-modify-write of products.csv and state is `flock`-guarded.** Two
+   billing terminals open at once cannot double-sell stock.
+ - **Atomic catalog rewrite:** `products.csv.new` is written in the same
+@@ -258,51 +382,100 @@ is never required, and every other feature works fully without it.
+ - **Billing atomicity:** all SELL rows are appended FIRST, then stock is
+   decremented. If the stock update fails, the script appends VOID reversal rows
+   so the ledger can never lie (a bill never exists without its stock movement).
++- **Import is all-or-nothing:** every row is validated before anything is
++  written; one bad row means zero changes (provable with sha256 before/after).
+ - **trap cleanup on EXIT:** no `.new` files, no stale locks left behind.
+ 
+-## Money math (critical)
+-
+-All arithmetic is in integer paise internally. `rupees_to_paise` parses "25",
+-"25.5", and "25.00" into exactly 2500 / 2550 / 2500 using pure string
+-manipulation — no `bc`, no floating point. Sums are integer sums. The dashboard
+-follows the same rule: totals are computed on integer paise in JS; `₹` appears
+-only in formatted display strings.
+-
+-## Dependencies
+-
+-Required: **bash 4+**, coreutils, awk, flock.
+-
+-| Tool | Purpose | Install |
+-|------|---------|---------|
+-| zint | print label PNGs (else pure-bash EAN-13 SVG fallback) | `sudo apt install zint` |
+-| tar  | backups | `sudo apt install tar` |
+-| curl | online barcode lookup + publishing (optional) | `sudo apt install curl` |
+-| python3 | dashboard live server (stdlib only, no pip) | preinstalled on most distros |
+-
+-Everything degrades gracefully: if missing, the feature is simply disabled and
+-`--doctor` reports it.
+-
+-## Backups
+-
+-`./shopkeep.sh backup` (menu option 15) writes `backups/shopkeep-<timestamp>.tar.gz`
+-of `shopkeep-data/` and keeps the last 14. A backup also runs automatically on
+-the first menu launch of each new day.
+-
+-## Honest limitations
+-
++## Troubleshooting
++
++| Symptom | Meaning / fix |
++|---------|---------------|
++| `start` says **Already running** | The dashboard is already up — open http://127.0.0.1:8000 |
++| `start` says the port did not open | Something else has port 8000 — stop it, or see `shopkeep-data/server.log` for the actual error |
++| `stop` says "Not running (no pid file)" | Nothing to stop — safe, ignore |
++| Browser did not open | No GUI/browser on this machine — open http://127.0.0.1:8000 yourself |
++| Scan button shows a hint about zbar | `sudo apt install zbar-tools` (one time; needs internet) |
++| Camera scan does nothing in the dashboard | The browser lacks the BarcodeDetector API — use **Chrome or Edge**, or use `scan --image` from the terminal |
++| Dashboard shows old data after you edited CSVs by hand | Regenerate: `./shopkeep.sh web`, or just refresh the live page |
++| Buttons are missing entirely | You opened the `file://` snapshot — run `./shopkeep.sh start` for the live dashboard |
++| **WSL2** | Keep the shopkeep folder on the Linux filesystem (ext4), NOT `/mnt/c/...` — flock and atomic rename are unreliable on Windows drives. Git Bash / macOS lack `flock` (exit 2). From Windows, open http://127.0.0.1:8000 — WSL2 forwards localhost automatically |
++
++## Known limitations (honest)
++
++- **Camera scanning needs `zbar-tools`** — a one-time `sudo apt install`.
++  Without it, camera/image scan shows a hint instead of failing silently.
++- **Dashboard camera scan needs Chrome/Edge** (BarcodeDetector API). Firefox
++  and Safari get an inline hint. No third-party decoder is ever embedded.
++- **The localhost server has no auth** — it is for the shop's own laptop.
++  Never port-forward 8000; never run it on a shared network machine.
++- **`file://` dashboard is a static snapshot** — buttons are removed so it
++  cannot change data; it also shows the data as of generation time.
++- **CSV scale ceilings** — comfortable to tens of thousands of rows; this is
++  deliberately not a database.
++- **Pre-1.3.0 bills lack SALE rows** in inventory_log — the 1:1 SELL↔SALE
++  reconcile holds from v1.3.0 onward.
++- **94 i18n keys are unwired** in some non-en languages (menus fall back to
++  English for those strings) — wiring them is proposed for v1.5.
++- **Single-machine design** — no multi-store sync, no multi-terminal UI (the
++  data model is concurrency-safe so a UI can be added without migration).
+ - No taxes / customer CRM / multi-currency (per-line and bill-level discounts
+-  ARE supported).
+-- No multi-terminal UI (the data model is concurrency-safe so this can be
+-  added later without migration).
+-- Receipts are printed to stdout; printing to a physical printer is out of
+-  scope (pipe `bill` output to `lp` if you want paper).
+-- The dashboard's live server binds 127.0.0.1 only — it is for the shop's own
+-  laptop, not a public web shop.
+-- The script is single-file by design; it may invoke `zint`, `curl` and
+-  `python3` directly as binaries but depends on no other scripts.
+-
+-These data formats were deliberately chosen so all of the above can be added
+-later **without any data migration**.
++  ARE supported). Receipts print to stdout; pipe to `lp` for paper.
++
++## Changelog — v1.4.0 (vs v1.3.0)
++
++### Fixed
++- **Saved language was never read back** (v1.3.0 bug): `lang=hi` in
++  shopkeep.conf was ignored at startup, so menus, receipts and the dashboard
++  always booted English. Now read back, validated, and honoured everywhere —
++  the dashboard language dropdown updates the terminal too.
++- **`stop` could orphan the server**: the pidfile captured the launcher's
++  wrapper subshell instead of the python process, so `stop` killed the wrapper
++  and left the real server alive. The launcher now `exec`s into python and the
++  pidfile holds the real pid.
++- UPI QR never appeared after a dashboard bill (bill-number "0003" vs "3"
++  mismatch when matching the receipt).
++- The `file://` snapshot could still show three live-only controls (billing,
++  void/return, add-product) — snapshot purity audited to zero mutating nodes.
++- Four report headings ignored the selected language.
++- Robustness pass (5A/5B): the interactive menu no longer dies when a handler
++  is cancelled or fails; `config` rejects unknown keys instead of writing them
++  silently; `-h` no longer omits `publish`; new-subcommand usage errors return
++  cleanly instead of exiting mid-process; `gen-qr` no longer produces
++  `x.svg.svg` for SVG outputs; emoji category matching no longer confuses
++  "ice cream" with soap.
++
++### Added
++- **Full button dashboard**: 5 tabs (Billing / Products / Reports /
++  Data & backup / Settings), big touch buttons, plain-word confirms, verbatim
++  error text, busy states, auto-refresh — backed by 14 POST endpoints and
++  read-only JSON endpoints (see the HTTP API section).
++- **Scan**: camera (`zbarcam`) and image (`zbarimg`) barcode decoding,
++  `scan --image FILE [--bill]`, and `c:`/`i:` input prefixes inside the
++  interactive bill.
++- **quickbill**: one-shot argv billing on the same engine as `bill`
++  (byte-identical rows, proven by selftest).
++- **import**: bulk CSV product loading — all-or-nothing, `--dry-run` report,
++  `--template`; the same validator powers the dashboard's Check/Import flow.
++- **report <start> <end>**: range sales report on the same core as `summary`
++  (totals provably equal the sum of per-day summaries).
++- **export**: Excel-safe CSV copies into `shopkeep-data/exports/` (formula
++  injection guarded; raw CSVs untouched) + dashboard download buttons.
++- **upi-qr** + `upi_vpa` config: UPI intent QR on receipts, via
++  `upi-qr <amount>`, in the dashboard after each saved bill, and through
++  `GET /api/upiqr`.
++- **start / stop**: one-command dashboard launcher (pidfile-only lifecycle,
++  browser open, "already running" safe) — the recommended way to run shopkeep.
++- Dashboard language dropdown (English, हिन्दी, தமிழ், తెలుగు, বাংলা).
++- Self-tests grew from 28 to **41** (quickbill parity, import
++  all-or-nothing, report-vs-summary, scan degradation, UPI URI, start/stop
++  lifecycle, add-dup / edit / config / void / backup pairs, version
++  consistency).
++
++### Changed
++- README rewritten around the shop-owner workflow (start-first) with a full
++  button→endpoint→subcommand map and HTTP API reference.
++- `shellcheck` clean across the whole script (no new finding classes vs the
++  5A baseline); `--doctor` now reports scan/QR dependencies.
+ 
+ ## License
+ 
+diff --git a/shopkeep.sh b/shopkeep.sh
+index e950680..245f382 100755
+--- a/shopkeep.sh
++++ b/shopkeep.sh
+@@ -158,7 +158,7 @@ MONEY_FIELD=9
+ MAX_NAME=22
+ US=$'\x1f'   # unit separator — never appears in product names
+ 
+-VERSION="1.3.0"
++VERSION="1.4.0"
+ 
+ # Globals
+ declare -A P_NAME P_PRICE P_QTY P_THRESHOLD P_DESC P_TYPE P_IMAGE P_EXPIRY P_HSN
+@@ -3126,6 +3126,12 @@ cmd_selftest() {
+     st_test "scan graceful degradation" _st_scan_degrade
+     st_test "UPI URI format" _st_upi_uri
+     st_test "start/stop pidfile lifecycle" _st_start_stop
++    st_test "add duplicate rejection (CSV untouched)" _st_add_dup
++    st_test "edit price + invalid-price rejection" _st_edit_pair
++    st_test "config allowlist (set + unknown key)" _st_config_allowlist
++    st_test "void happy + missing-bill rejection" _st_void_pair
++    st_test "backup tarball + no-tar degradation" _st_backup_pair
++    st_test "version consistency (-V + dashboard)" _st_version_consistency
+ 
+     echo
+     local failcolor="$C_GREEN"
+@@ -3838,6 +3844,94 @@ _st_start_stop() {
+     return 0
+ }
+ 
++# v1.4.0 (5D): one happy/fail pair per endpoint family that had no selftest
++# coverage yet (add-dup / edit / config / void / backup), plus a cheap
++# version-consistency check (-V output and the dashboard meta agree).
++_st_add_dup() {
++    do_add "7601" "DupTest" 1000 5 1 >/dev/null 2>&1 || return 1
++    local before after
++    before=$(sha256sum "$PRODUCTS_CSV" | cut -d' ' -f1)
++    if do_add "7601" "DupTest2" 2000 3 1 >/dev/null 2>&1; then return 1; fi
++    after=$(sha256sum "$PRODUCTS_CSV" | cut -d' ' -f1)
++    [[ "$before" == "$after" ]] || return 1
++    local n; n=$(awk -F',' '$1=="7601"' "$PRODUCTS_CSV" | wc -l)
++    [[ "$n" == "1" ]] || return 1
++    return 0
++}
++
++_st_edit_pair() {
++    do_add "7602" "EditTest" 1000 5 1 >/dev/null 2>&1 || return 1
++    cmd_edit "7602" --price 12.50 >/dev/null 2>&1 || return 1
++    local pp; pp=$(awk -F',' '$1=="7602"{print $3}' "$PRODUCTS_CSV")
++    [[ "$pp" == "1250" ]] || return 1
++    local before after
++    before=$(sha256sum "$PRODUCTS_CSV" | cut -d' ' -f1)
++    if cmd_edit "7602" --price "abc" >/dev/null 2>&1; then return 1; fi
++    after=$(sha256sum "$PRODUCTS_CSV" | cut -d' ' -f1)
++    [[ "$before" == "$after" ]] || return 1
++    return 0
++}
++
++_st_config_allowlist() {
++    # happy: allowlisted key is set and reads back
++    cmd_config shop_name "ST Allowlist Shop" >/dev/null 2>&1 || return 1
++    [[ "$(conf shop_name "")" == "ST Allowlist Shop" ]] || return 1
++    # fail: unknown key rejected AND shopkeep.conf left byte-identical
++    local before after
++    before=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
++    if cmd_config nuclear_codes "x" >/dev/null 2>&1; then return 1; fi
++    after=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
++    [[ "$before" == "$after" ]] || return 1
++    return 0
++}
++
++_st_void_pair() {
++    do_add "7603" "VoidTest" 1000 10 1 >/dev/null 2>&1 || return 1
++    BILL_PHONE=""; BILL_DISCOUNT_PCT="0"
++    commit_bill "7603 3" >/dev/null 2>&1 || return 1
++    local bno="$BILL_NO"
++    void_bill "$bno" 0 >/dev/null 2>&1 || return 1
++    local q; q=$(awk -F',' '$1=="7603"{print $4}' "$PRODUCTS_CSV")
++    [[ "$q" == "10" ]] || return 1                      # stock restored
++    awk -F',' -v b="$bno" '$1==b && $8=="VOID"{f=1} END{exit !f}' "$BILLS_CSV" || return 1
++    local before after
++    before=$(sha256sum "$BILLS_CSV" | cut -d' ' -f1)
++    if void_bill 987654 0 >/dev/null 2>&1; then return 1; fi   # no such bill
++    after=$(sha256sum "$BILLS_CSV" | cut -d' ' -f1)
++    [[ "$before" == "$after" ]] || return 1
++    return 0
++}
++
++_st_backup_pair() {
++    mkdir -p "$BACKUPS_DIR"
++    backup_now >/dev/null 2>&1 || return 1
++    local newest; newest=$(ls -1t "$BACKUPS_DIR"/shopkeep-*.tar.gz 2>/dev/null | head -1)
++    [[ -s "$newest" ]] || return 1
++    tar -tzf "$newest" 2>/dev/null | grep -q "products.csv" || return 1
++    # fail path: tar missing -> graceful rc!=0 and NO partial archive left
++    local n_before n_after
++    n_before=$(ls -1 "$BACKUPS_DIR"/shopkeep-*.tar.gz 2>/dev/null | wc -l)
++    if ( PATH="/nonexistent" backup_now ) >/dev/null 2>&1; then return 1; fi
++    n_after=$(ls -1 "$BACKUPS_DIR"/shopkeep-*.tar.gz 2>/dev/null | wc -l)
++    [[ "$n_before" == "$n_after" ]] || return 1
++    return 0
++}
++
++_st_version_consistency() {
++    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
++    local v
++    v=$(SHOPKEEP_DATA_DIR="$ST_TMP/sv-data" bash "$SCRIPT_DIR/shopkeep.sh" -V 2>/dev/null)
++    [[ "$v" == "shopkeep.sh $VERSION" ]] || return 1
++    DASHBOARD_HTML="$ST_TMP/version-check.html"
++    local okweb=1
++    cmd_web >/dev/null 2>&1 || okweb=0
++    if (( okweb )); then
++        grep -q "\"version\":\"$VERSION\"" "$DASHBOARD_HTML" || okweb=0
++    fi
++    rm -f "$DASHBOARD_HTML"; DASHBOARD_HTML=""
++    (( okweb ))
++}
++
+ ist_today() { TZ=Asia/Kolkata date '+%Y-%m-%d'; }
+ 
+ days_until() {
+-- 
+2.47.3
+

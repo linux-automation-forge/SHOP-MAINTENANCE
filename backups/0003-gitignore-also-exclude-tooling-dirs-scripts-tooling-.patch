@@ -1,0 +1,28 @@
+From 9da542d41b19d9b3ef959870441e17ce24b3cd54 Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Sun, 27 Sep 2026 13:15:49 +0000
+Subject: [PATCH 3/5] =?UTF-8?q?gitignore:=20also=20exclude=20tooling=20dir?=
+ =?UTF-8?q?s=20(scripts/,=20tooling/,=20*.deb)=20=E2=80=94=20no=20binary?=
+ =?UTF-8?q?=20blobs=20in=20repo=20(5C=20decision=20#1)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .gitignore | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/.gitignore b/.gitignore
+index 4b40bb2..83553f5 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,3 +3,6 @@ backups/
+ labels/
+ exports/
+ shopkeep-dashboard.html
++scripts/
++tooling/
++*.deb
+-- 
+2.47.3
+

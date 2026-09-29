@@ -1,0 +1,11 @@
+7c207547c66a1a939e044b86b0b09cd021a8755026909ad1c76bd49269978175  shopkeep.sh
+1eb2341e420c95c333ff073a1f7f49435f7cf19aa37404f69013595977152d57  shopkeep-web.py
+ed3d991a72988f204c7a0c67fc03e3bf89c6096cef86f9831af84e0b0185f0e0  README.md
+d52750ddbccd844c64744dd0398fd12d62f11637e1febf3437b283fa8e1a3595  LICENSE
+fa2270c478c435b2ae002c41dc30c7d20cab882a35aa64af45c976b008ad2a00  /home/z/my-project/download/shopkeep-v1.4.0-dashboard.html
+bd170e022e97c044e80ab857dc6db161bbe08c106f21d87900fe92593fb9f66a  patches/0001-v1.4.0-wip-5A-debug-pass-6-fixes-excel-safe-export-..patch
+a56a239583aec7ed29b7992a7fe4c8b27bc9de7206d633ca2b6fa8e2ebacf6c4  patches/0002-v1.4.0-wip-5B-scan-zbarcam-zbarimg-image-bill-menu-c.patch
+f5332c5d571ddcd35b22c27121aabb2b188279d3875b51c68487785143945491  patches/0003-gitignore-also-exclude-tooling-dirs-scripts-tooling-.patch
+53a747237d4ae7a4b53b8cf46b97135eafd6fa95a1a53610c6c32777248b2980  patches/0004-v1.4.0-wip-5C-full-button-dashboard-API-endpoints-st.patch
+f21e5f2a9baab03d855a623a1c57e7027c39263c4742f80240573742fb1896a3  patches/0005-v1.4.0-full-shopkeeper-GUI-every-button-scan-camera-.patch
+2f1b4dd026caeec4db9629b23f5e6903bd1343e5bce10d638ffc27a5860200c6  shopkeep-v1.4.0.bundle
