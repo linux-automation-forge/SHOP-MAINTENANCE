@@ -16,7 +16,7 @@ resource "aws_instance" "my_first_server" {
   tags = {
     Name = "aws_kj_server"
 }
-output "server public ip" {
+output "server_public_ip" {
 value = "aws_instance.my_first__server.public_ip"
 
 
