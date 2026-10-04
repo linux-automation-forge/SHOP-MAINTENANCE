@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M. Manmohan | Cloud & DevOps Engineer</title>
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --bg-card: #151d30;
+            --accent-green: #10b981;
+            --accent-blue: #3b82f6;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #22314d;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 90vh;
+        }
+
+        .portfolio-container {
+            background-color: var(--bg-card);
+            max-width: 700px;
+            width: 100%;
+            padding: 45px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border);
+            border-top: 6px solid var(--accent-green);
+        }
+
+        .header {
+            margin-bottom: 35px;
+            position: relative;
+        }
+
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, var(--accent-green), #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .tagline {
+            color: var(--text-secondary);
+            font-size: 18px;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .bio-text {
+            line-height: 1.8;
+            color: #cbd5e1;
+            font-size: 16px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 700;
+            margin-top: 40px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+        }
+
+        .skills-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .skill-badge {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .skill-badge:hover {
+            background-color: var(--accent-green);
+            color: var(--bg-main);
+            transform: translateY(-2px);
+        }
+
+        .project-card {
+            background-color: rgba(15, 23, 42, 0.4);
+            border-left: 4px solid var(--accent-blue);
+            padding: 20px;
+            border-radius: 0 12px 12px 0;
+            margin-top: 15px;
+            border-top: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .project-header {
+            font-weight: 700;
+            color: var(--accent-blue);
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .console-box {
+            background-color: #070a12;
+            padding: 18px;
+            border-radius: 10px;
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 14px;
+            color: #a7f3d0;
+            margin-top: 25px;
+            border: 1px solid var(--border);
+            line-height: 1.6;
+        }
+
+        .console-line {
+            display: flex;
+            gap: 10px;
+        }
+
+        .prompt { color: #38bdf8; }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 12px;
+            color: #475569;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="portfolio-container">
+        <div class="header">
+            <h1>M. Manmohan</h1>
+            <p class="tagline">Cloud & Infrastructure Automation Systems Engineer</p>
+        </div>
+
+        <p class="bio-text">
+            Specializing in Cloud Infrastructure-as-Code (IaC) architectures and automated delivery pipelines. I engineer secure, self-healing, and dynamically scalable enterprise runtime networks by replacing manual configurations with version-controlled engineering codebases.
+        </p>
+
+        <div class="section-title">Core Competencies</div>
+        <div class="skills-container">
+            <span class="skill-tag skill-badge">Terraform IaC</span>
+            <span class="skill-tag skill-badge">Amazon Web Services (AWS)</span>
+            <span class="skill-tag skill-badge">Git & GitHub Pipelines</span>
+            <span class="skill-tag skill-badge">Linux Enterprise Architecture</span>
+            <span class="skill-tag skill-badge">GitOps Continuous Deployment</span>
+            <span class="skill-tag skill-badge">Infrastructure Security Automation</span>
+        </div>
+
+        <div class="section-title">Production Deployments</div>
+        <div class="project-card">
+            <div class="project-header">Automated Cloud Infrastructure Platform</div>
+            <p style="margin: 0; font-size: 14px; color: #cbd5e1;">
+                This active portfolio hosting cluster, including integrated firewall parameters, secure ingress ports, network edge maps, and layout bundles, was compiled, tested, and provisioned completely from script via a headless Terraform Cloud delivery execution pipeline.
+            </p>
+        </div>
+
+        <div class="section-title">System Status Reference</div>
+        <div class="console-box">
+            <div class="console-line"><span class="prompt">manmohan@devops:~$</span> terraform state show</div>
+            <div style="color: #6ee7b7; margin-left: 15px;">• provider.aws [Active | us-east-1]</div>
+            <div style="color: #6ee7b7; margin-left: 15px;">• aws_instance.portfolio_server [Running]</div>
+            <div style="color: #6ee7b7; margin-left: 15px;">• aws_security_group.portfolio_firewall [Secured]</div>
+            <div style="color: #94a3b8; margin-top: 5px;">// Node Location: Andhra Pradesh, India</div>
+        </div>
+
+        <div class="footer">
+            // STATE ENGINE DEPLOYMENT ID: TF-1.16.4-VERIFIED //
+        </div>
+    </div>
+
+</body>
+</html>
