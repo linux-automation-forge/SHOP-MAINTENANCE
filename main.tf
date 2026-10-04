@@ -1,32 +1,38 @@
 provider "aws" {
-  region = "us-east-1"
+region = "us-east-1"
 }
-
-# 1. The Storage Bucket
-resource "aws_s3_bucket" "test_bucket" {
-  bucket = "terrabox-manmohan-bucket-2026"
+resource "aws_security_group" "portfolio_firewall" {
+name = "portfolio-web-firewall"
+description = "Allow public traffic to reach our portfolio website"
+ingress {
+from_port = 80 
+to_port = 80
+protocol = "tcp"
+cidr_blocks = ["0.0.0.0/0"]
 }
-
-# 2. The Free-Tier Virtual Linux Server
-resource "aws_instance" "my_first_server" {
-  ami           = "ami-0e2c8caa4b6378d8c" 
-  instance_type = "t3.micro"
-
-  user_data = <<-EOF
-              #!/bin/bash
-              sudo apt-get update -y
-              sudo apt-get install apache2 -y
-              sudo systemctl start apache2
-              sudo systemctl enable apache2
-              echo "<h1>Welcome to Manmohan's Tech Startup Website!</h1><p>Deployed automatically via Terraform Cloud.</p>" | sudo tee /var/www/html/index.html
-              EOF
-
-  tags = {
-    Name = "aws_kj_server"
-  } 
+egress {
+from_port = 0 
+to_port = 0 
+protocol = -1
+cidr_blocks = ["0.0.0.0/0"]
 }
-
-# 3. The Print Output Block
-output "server_public_ip" {
-  value = aws_instance.my_first_server.public_ip 
+}
+resource "aws_instance" "portfolio_server" {
+  ami                    = "ami-0e2c8caa4b6378d8c"
+  instance_type          = "t3.micro"
+  vpc_security_group_ids = [aws_security_group.portfolio_firewall.id]
+user_data = <<-EOF 
+            #!/bin/bash
+            sudo apt-get update -y
+            sudo apt-get install apache2 -y
+            sudo systemctl start apache2
+            sudo systemctl enable apache2
+            cat <<HTML > /var/www/html/index.html
+            ${file("portfolio.html")}
+            HTML
+            EOF
+}
+output "portfolio_live_url" {
+ value = "https://${aws_instance.portfolio_server.public_ip}"
+description ="click this link to visit our portfolio website"
 }
