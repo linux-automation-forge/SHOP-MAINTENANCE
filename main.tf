@@ -2,7 +2,7 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# 1. Network Firewall
+# 1. The Network Firewall
 resource "aws_security_group" "portfolio_firewall" {
   name        = "portfolio-web-firewall"
   description = "Allow public traffic to reach our portfolio website"
@@ -22,13 +22,12 @@ resource "aws_security_group" "portfolio_firewall" {
   }
 }
 
-# 2. Free-Tier Computing Server Instance
+# 2. The Free-Tier Virtual Linux Server
 resource "aws_instance" "portfolio_server" {
   ami                    = "ami-0e2c8caa4b6378d8c"
-  instance_type          = "t3.micro"
+  instance_type          = "t3.micro" # Free Tier size [Amazon EC2 12-Month Free Tier - Amazon Web Services]
   vpc_security_group_ids = [aws_security_group.portfolio_firewall.id]
 
-  # ULTRA-CLEAN EXTENSION METHOD: Loads the external bash file safely with zero spacing bugs!
   user_data = templatefile("setup.sh", {})
 
   tags = {
@@ -36,8 +35,24 @@ resource "aws_instance" "portfolio_server" {
   }
 }
 
-# 3. Dynamic Browser Shortcut link
-output "portfolio_live_url" {
-  value       = "http://${aws_instance.portfolio_server.public_ip}"
-  description = "Click this shortcut link to test and load your live portfolio website!"
+# 3. NEW BLOCK: Allocate a Permanent Static Elastic IP
+resource "aws_eip" "static_ip" {
+  domain = "vpc" # Configures it to work inside your default cloud network
+}
+
+# 4. NEW BLOCK: Bind the Elastic IP directly to your Server
+resource "aws_eip_association" "eip_assoc" {
+  instance_id   = aws_instance.portfolio_server.id
+  allocation_id = aws_eip.static_ip.id
+}
+
+# 5. UPGRADED OUTPUTS: Prints your permanent text and number URLs
+output "permanent_numeric_ip" {
+  value       = aws_eip.static_ip.public_ip
+  description = "Your permanent, static IP address number string."
+}
+
+output "permanent_aws_text_url" {
+  value       = "http://${aws_instance.portfolio_server.public_dns}"
+  description = "Your permanent free AWS text URL link!"
 }
